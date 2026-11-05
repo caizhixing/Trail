@@ -31,12 +31,15 @@ class NoopTrailBehaviorTest {
     }
 
     @Test
-    fun mapOverloadsAreEmptyBodiesAndDoNotCrash() {
-        Trail.event("widget", "trail_test_noop_map", mapOf("k" to "v"))
-        Trail.event("widget", "trail_test_noop_map_explicit", Audience.HUMAN, Level.ERROR, mapOf("k" to "v"))
-        Trail.flow("search", "trail_test_noop_flow_map", mapOf("k" to "v"))
+    fun mapOverloadsNeverReadAttrsAndRecordNothing() {
+        val attrs = ReadCountingMap()
 
-        assertTrue(true)
+        Trail.event("widget", "trail_test_noop_map", attrs)
+        Trail.event("widget", "trail_test_noop_map_explicit", Audience.HUMAN, Level.ERROR, attrs)
+        Trail.flow("search", "trail_test_noop_flow_map", attrs)
+
+        assertEquals(0, attrs.reads)
+        assertEquals("", Trail.dumpRecent(10))
     }
 
     @Test
@@ -87,4 +90,62 @@ class NoopTrailBehaviorTest {
         }
         assertNull(Trail.currentTraceId())
     }
+}
+
+/**
+ * Observability probe for the behavior-2.8 Map overloads: every read path of
+ * the Map increments [reads], so a stub that touches its argument in any way
+ * (lookup / iteration / size) breaks the reads == 0 assertion instead of
+ * passing vacuously.
+ */
+private class ReadCountingMap : Map<String, String> {
+
+    private val backing = mapOf("trail_test_observable" to "value")
+
+    var reads: Int = 0
+        private set
+
+    override val size: Int
+        get() {
+            reads++
+            return backing.size
+        }
+
+    override fun isEmpty(): Boolean {
+        reads++
+        return backing.isEmpty()
+    }
+
+    override fun containsKey(key: String): Boolean {
+        reads++
+        return backing.containsKey(key)
+    }
+
+    override fun containsValue(value: String): Boolean {
+        reads++
+        return backing.containsValue(value)
+    }
+
+    override operator fun get(key: String): String? {
+        reads++
+        return backing[key]
+    }
+
+    override val keys: Set<String>
+        get() {
+            reads++
+            return backing.keys
+        }
+
+    override val values: Collection<String>
+        get() {
+            reads++
+            return backing.values
+        }
+
+    override val entries: Set<Map.Entry<String, String>>
+        get() {
+            reads++
+            return backing.entries
+        }
 }

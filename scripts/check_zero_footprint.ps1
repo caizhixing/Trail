@@ -14,6 +14,11 @@
          event-name marker string.
       3. Reverse assertion: internalReleaseRuntimeClasspath DOES contain
          trail-debug.
+      4. Reverse byte-scan: the internalRelease APK dex contains at least one
+         io/github/caizhixing/trail library string (excluding the /sample
+         prefix, e.g. R8-kept Trail class descriptors) AND at least one
+         "trail_sample_" marker string, proving check 2 absence comes from
+         removal, not from a broken scan.
 
     Dex scan pattern note: the sample app namespace itself is
     io.github.caizhixing.trail.sample (frozen in sample-app/build.gradle.kts)
@@ -166,6 +171,52 @@ if ($null -ne $productionApk) {
     }
 
     Write-Host '[INFO] withTrace shell evidence: sample-app keeps a live Trail.withTrace call site (SampleTraceSeed), so the library-string scan above proves the R8 fate of the suspend shell class'
+}
+
+# ---------------------------------------------------------------------------
+# Check 4: reverse byte-scan of the internalRelease APK dex
+# ---------------------------------------------------------------------------
+if ($null -ne $internalApk) {
+    Write-Host '== internal dex reverse-scan checks ==' -ForegroundColor Cyan
+    Write-Host ("[INFO] scanning " + $internalApk)
+
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+    $zip = [System.IO.Compression.ZipFile]::OpenRead($internalApk)
+    try {
+        $dexEntries = @($zip.Entries | Where-Object { $_.Name -match '^classes\d*\.dex$' })
+        if ($dexEntries.Count -eq 0) {
+            Write-Fail 'no classes*.dex entries found in the internalRelease APK'
+        }
+        $libraryTotal = 0
+        $markerTotal = 0
+        foreach ($entry in $dexEntries) {
+            $bytes = $null
+            $stream = $entry.Open()
+            try {
+                $buffer = New-Object System.IO.MemoryStream
+                $stream.CopyTo($buffer)
+                $bytes = $buffer.ToArray()
+            } finally {
+                $stream.Dispose()
+            }
+            $text = $latin1.GetString($bytes)
+            $libraryTotal += [regex]::Matches($text, $libraryPattern).Count
+            $markerTotal += [regex]::Matches($text, $markerPattern).Count
+        }
+        if ($libraryTotal -ge 1) {
+            Write-Pass ("internalRelease dex keeps the trail library string x" + $libraryTotal + " (reverse assertion)")
+        } else {
+            Write-Fail 'internalRelease dex contains NO io/github/caizhixing/trail library string (internal wiring broken)'
+        }
+        if ($markerTotal -ge 1) {
+            Write-Pass ("internalRelease dex keeps the trail_sample_ marker string x" + $markerTotal + " (reverse assertion)")
+        } else {
+            Write-Fail 'internalRelease dex contains NO trail_sample_ marker string (sample events not wired into the internal build)'
+        }
+    } finally {
+        $zip.Dispose()
+    }
 }
 
 # ---------------------------------------------------------------------------

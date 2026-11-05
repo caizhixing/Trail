@@ -3,7 +3,6 @@ package io.github.caizhixing.trail
 import io.github.caizhixing.trail.model.Audience
 import io.github.caizhixing.trail.model.Level
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -28,7 +27,6 @@ class TrailEventDeliveryTest {
         assertEquals(Audience.AI, event.audience)
         assertEquals(Level.INFO, event.level)
         assertEquals(mapOf("slot" to "search"), event.attrs)
-        assertNotNull(event.ts)
         assertTrue("ts must be epoch millis > 0", event.ts > 0L)
         assertTrue("ts must not be in the future", event.ts <= System.currentTimeMillis())
         assertEquals(Thread.currentThread().name, event.tid)
