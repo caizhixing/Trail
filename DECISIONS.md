@@ -8,6 +8,12 @@
 ### 2026-11-05 reviewer 模型变更（k3$max → deepseek-v4-pro 裸 ID）
 阶段 0 选定的 `new-provider/k3$max` 与 `new-provider/k3` 在本 harness 的 workflow 子代理路径实测静默失败（对照组会话模型正常；`new-provider/` 前缀路径整体不可用）。用户改指定 `deepseek-v4-pro`；裸 ID（不带 provider 覆盖）冒烟实测可用。skill 记录的「deepseek-v4-pro 思考模式不可作子代理」限制针对 `new-provider/` 前缀路径，裸 ID 路径实测不受影响。家族 DeepSeek ≠ GLM（worker）✓ 仍合规。
 
+### 2026-11-05 D-1 结项：withTrace 壳类 R8 全消实证（PR #10 / issue #2）
+sample 生产代码保留无法常量门消除的真实 `Trail.withTrace` 调用点（SampleTraceSeed，纯 stdlib startCoroutine 驱动），productionRelease 全部 dex 零 `io/github/caizhixing/trail` 库串、零 `trail_sample_` 特征串；R8 `mapping.txt` 显示 `Trail -> R8$$REMOVED$$CLASS`、`usage.txt` 列全部 trail 类已删。反向实证：internalRelease dex 命中库串 ×3 + 特征串 ×9（扫描器非假阴性，且已固化为脚本 Check 4）。**验收 A-② 按严格口径执行，无需壳类豁免降级。**评审附注（记档）：混淆开启时"库命名空间串扫描"存在盲区，混淆无关的硬证据是特征串 + mapping/usage 检查——已追加至 issue #8 行为 8.5（终验时脚本断言升级为 mapping.txt 检查）。
+
+### 2026-11-05 子代理池扩容与并发分配（用户授权）
+用户临时将子代理并发上限提至 8，并指定新增可选模型 gpt-5.6 Sol / gpt-6.1 Sol / glm-5.3 flash，要求跨模型分散以规避单模型并发限制。实测（8 种拼写变体冒烟）：仅 `glm-5.3-flash`（连字符）可用，两个 GPT 模型在本 harness 子代理路径不可达。**分配方案**：worker 池 = 会话默认 `glm-5.3`（重逻辑单）+ `glm-5.3-flash`（轻/中单，每波 ≤2 并发）；reviewer 固定 `deepseek-v4-pro`（不兼任 worker，保证 worker≠reviewer 家族）；主 agent（会话 glm-5.3）+ 单模型并发 ≤3。GPT ID 若后续可得（用户提供确切拼写），替入重单。
+
 ### 2026-11-05 仓库可见性
 用户拍板**保持 PUBLIC**（skill 红线 19 建议私有，风险已知悉：PRD / issue / PR 内容将公开）。内容红线照旧：一切产出禁止携带用户数据。
 
