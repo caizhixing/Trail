@@ -8,17 +8,22 @@ import io.github.caizhixing.trail.debug.engine.EngineLogger
 import io.github.caizhixing.trail.debug.engine.MaskingPolicy
 import io.github.caizhixing.trail.debug.engine.RingBuffer
 import io.github.caizhixing.trail.debug.engine.TrailSnapshotStore
+import io.github.caizhixing.trail.debug.trace.TraceBridge
+import io.github.caizhixing.trail.debug.trace.TraceContext
+import io.github.caizhixing.trail.debug.trace.TraceIds
 import io.github.caizhixing.trail.model.Audience
 import io.github.caizhixing.trail.model.Level
 import io.github.caizhixing.trail.model.LogEvent
 import io.github.caizhixing.trail.model.TrailConfig
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * Debug-artifact facade over the capture engine (issue #3): attr sanitization,
- * pre-init routing and engine lifecycle. Trace members remain owned by #4.
+ * Debug-artifact facade: capture engine (issue #3 — attr sanitization, pre-init
+ * routing, engine lifecycle) and live trace propagation (issue #4 — events built
+ * while a trace is active carry its id).
  */
 @PublishedApi
 internal object TrailImpl {
@@ -97,11 +102,28 @@ internal object TrailImpl {
         }
     }
 
-    internal suspend fun <T> withTrace(name: String, block: suspend () -> T): T = block()
+    /**
+     * Runs [block] under a fresh trace id. [name] only labels the scope for
+     * future span tooling — v1 has no span tree (NG6). The id travels in the
+     * coroutine context (structured concurrency) and is mirrored onto every
+     * thread the coroutine runs on, so the non-suspending [currentTraceId]
+     * resolves it anywhere inside the block.
+     */
+    internal suspend fun <T> withTrace(name: String, block: suspend () -> T): T {
+        val traceId = TraceIds.newId()
+        return withContext(TraceContext(traceId) + TraceBridge.coroutineElement(traceId)) {
+            block()
+        }
+    }
 
-    internal fun currentTraceId(): String? = null
+    internal fun currentTraceId(): String? = TraceBridge.currentTraceId()
 
-    internal fun beginTrace(name: String): AutoCloseable = AutoCloseable { }
+    /**
+     * Manual bridge for callback / Java call sites: pushes a fresh id onto the
+     * per-thread manual stack; close pops it. Shadowed whenever a coroutine
+     * trace is active.
+     */
+    internal fun beginTrace(name: String): AutoCloseable = TraceBridge.beginManualTrace()
 
     internal fun dumpRecent(count: Int): String {
         if (count <= 0) {
