@@ -11,14 +11,14 @@ import org.junit.Test
 
 /**
  * Behavior 4.5: events emitted inside a trace carry its id; events outside any
- * trace carry null. Asserted against the collector that issue #3 will swap for
- * the real engine — the field path (buildEvent → currentTraceId) stays fixed.
+ * trace carry null. Asserted against the engine-era observation hook
+ * (debugEvents) — the field path (buildEvent → currentTraceId) stays fixed.
  */
 class TrailTraceEventIntegrationTest {
 
     @Before
     fun resetCollector() {
-        TrailImpl.recentEvents.clear()
+        TrailImpl.resetForTest()
     }
 
     @Test
@@ -32,7 +32,7 @@ class TrailTraceEventIntegrationTest {
         }
         Trail.event("widget", "trail_test_outside_after")
 
-        val events = TrailImpl.recentEvents.snapshot()
+        val events = TrailImpl.debugEvents()
         assertEquals(4, events.size)
         assertNull(
             "event emitted before the trace must have null traceId",
@@ -58,6 +58,6 @@ class TrailTraceEventIntegrationTest {
     fun tracelessEventsStayNull() {
         Trail.event("widget", "trail_test_traceless")
 
-        assertNull(TrailImpl.recentEvents.snapshot().single().traceId)
+        assertNull(TrailImpl.debugEvents().single().traceId)
     }
 }
