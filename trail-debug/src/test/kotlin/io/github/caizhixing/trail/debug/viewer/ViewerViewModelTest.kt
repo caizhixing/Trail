@@ -1,5 +1,9 @@
 package io.github.caizhixing.trail.debug.viewer
 
+import io.github.caizhixing.trail.debug.export.ExportScope
+import io.github.caizhixing.trail.debug.export.ExportSharePayload
+import io.github.caizhixing.trail.debug.export.ResultState
+import io.github.caizhixing.trail.debug.export.TrailEventExporter
 import io.github.caizhixing.trail.model.Audience
 import io.github.caizhixing.trail.model.Level
 import io.github.caizhixing.trail.model.LogEvent
@@ -17,9 +21,16 @@ import org.junit.Test
  * ViewModel orchestration (behaviors 5.1 / 5.3 / 5.4 / 5.7) with both the
  * UI and IO dispatchers injected as `Unconfined` plus fake repository /
  * preferences — the whole viewer business logic, including the paging walk,
- * runs synchronously on the JVM (DECISIONS.md「测试栈」).
+ * runs synchronously on the JVM (DECISIONS.md「测试栈」). The export flow has
+ * its own suite (ViewerExportFlowTest); the default exporter here is a
+ * never-called stub.
  */
 class ViewerViewModelTest {
+
+    private class UnusedExporter : TrailEventExporter {
+        override fun export(scope: ExportScope): ResultState<ExportSharePayload> =
+            ResultState.Error(message = "export is not under test here")
+    }
 
     private class FakeViewerRepository(
         var memory: List<LogEvent> = emptyList(),
@@ -88,6 +99,7 @@ class ViewerViewModelTest {
         preferences,
         Dispatchers.Unconfined,
         Dispatchers.Unconfined,
+        UnusedExporter(),
     )
 
     private fun content(state: ViewerUiState): ViewerUiState.Content =

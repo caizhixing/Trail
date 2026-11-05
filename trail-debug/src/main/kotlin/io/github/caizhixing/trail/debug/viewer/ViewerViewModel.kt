@@ -1,9 +1,14 @@
 package io.github.caizhixing.trail.debug.viewer
 
 import androidx.lifecycle.ViewModel
+import io.github.caizhixing.trail.debug.export.ExportScope
+import io.github.caizhixing.trail.debug.export.ExportSharePayload
+import io.github.caizhixing.trail.debug.export.ResultState
+import io.github.caizhixing.trail.debug.export.TrailEventExporter
 import io.github.caizhixing.trail.model.Audience
 import io.github.caizhixing.trail.model.Level
 import io.github.caizhixing.trail.model.LogEvent
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -16,17 +21,19 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 
 /**
- * Viewer orchestration (behaviors 5.1 / 5.3 / 5.4 / 5.7). The merged source
- * (memory ring ∪ file pages) is loaded incrementally; the displayed list is
- * the merged set narrowed by the active six-dimension filter. Both the UI
- * dispatcher and the IO dispatcher are constructor-injected (JUnit4 tests
- * pass `Unconfined` for each, DECISIONS.md「测试栈」).
+ * Viewer orchestration (behaviors 5.1 / 5.3 / 5.4 / 5.7 / 6.x). The merged
+ * source (memory ring ∪ file pages) is loaded incrementally; the displayed
+ * list is the merged set narrowed by the active six-dimension filter. Both
+ * the UI dispatcher and the IO dispatcher are constructor-injected (JUnit4
+ * tests pass `Unconfined` for each, DECISIONS.md「测试栈」), as is the
+ * [TrailEventExporter] so the export flow is JVM-testable.
  */
 internal class ViewerViewModel(
     private val repository: ViewerRepository,
     private val preferences: ViewerPreferences,
     dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val exporter: TrailEventExporter,
 ) : ViewModel() {
 
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
@@ -40,6 +47,8 @@ internal class ViewerViewModel(
     private var conciseView = ConciseViewPolicy.DEFAULT_CONCISE
     private var filter = EventFilter()
     private var selected: LogEvent? = null
+    private var exportInFlight = false
+    private var exportResult: ResultState<ExportSharePayload>? = null
 
     private val _uiState = MutableStateFlow<ViewerUiState>(ViewerUiState.Loading)
     val uiState: StateFlow<ViewerUiState> = _uiState.asStateFlow()
@@ -150,6 +159,40 @@ internal class ViewerViewModel(
         publish()
     }
 
+    /**
+     * Export entry (issue #6): builds the file on the injected IO dispatcher
+     * and publishes Loading → Success/Error. One export runs at a time;
+     * re-entrant requests while a file is being written are ignored.
+     */
+    fun onExportRequested(request: ExportScope) {
+        if (exportInFlight) {
+            return
+        }
+        exportInFlight = true
+        exportResult = ResultState.Loading()
+        publish()
+        scope.launch {
+            val result = try {
+                withContext(ioDispatcher) { exporter.export(request) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                ResultState.Error(message = "export failed: ${e.message}", throwable = e)
+            }
+            exportInFlight = false
+            exportResult = result
+            publish()
+        }
+    }
+
+    /** The screen launched the share sheet for the ready payload; clear the event. */
+    fun onShareConsumed() {
+        if (exportResult is ResultState.Success) {
+            exportResult = null
+            publish()
+        }
+    }
+
     override fun onCleared() {
         scope.cancel()
     }
@@ -201,6 +244,7 @@ internal class ViewerViewModel(
             loadingOlder = loadingOlder,
             endReached = endReached,
             selected = selected,
+            export = exportResult,
         )
     }
 }

@@ -10,6 +10,18 @@
         <activity
             android:name="io.github.caizhixing.trail.debug.viewer.TrailViewerActivity"
             android:exported="false" />
+
+        <!-- Export share (behavior 6.5): exposes cacheDir/trail_exports files
+             to the chosen receiver; paths in res/xml/file_paths.xml. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.trail.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 
 </manifest>

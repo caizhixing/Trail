@@ -22,13 +22,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import io.github.caizhixing.trail.debug.export.ExportScope
+import io.github.caizhixing.trail.debug.export.ExportSharePayload
+import io.github.caizhixing.trail.debug.export.ResultState
 import io.github.caizhixing.trail.model.Audience
 import io.github.caizhixing.trail.model.Level
 import io.github.caizhixing.trail.model.LogEvent
 
 /**
- * Stateless event list with the six-dimension filter panel and the paging
- * trigger (behaviors 5.2 / 5.8). Scroll position is UI-local state; every
+ * Stateless event list with the six-dimension filter panel, the export scope
+ * entries (issue #6, minimal UI: three buttons) and the paging trigger
+ * (behaviors 5.2 / 5.8 / 6.x). Scroll position is UI-local state; every
  * piece of business state arrives via [state] and leaves via callbacks.
  */
 @Composable
@@ -45,6 +49,7 @@ internal fun ViewerListContent(
     onTraceIdSelected: (String?) -> Unit,
     onFiltersCleared: () -> Unit,
     onEventSelected: (LogEvent) -> Unit,
+    onExportRequested: (ExportScope) -> Unit,
 ) {
     val listState = rememberLazyListState()
     val nearEnd by remember {
@@ -76,6 +81,7 @@ internal fun ViewerListContent(
             onTimeRangeChanged = onTimeRangeChanged,
             onTraceIdSelected = onTraceIdSelected,
             onFiltersCleared = onFiltersCleared,
+            onExportRequested = onExportRequested,
         )
         LazyColumn(
             state = listState,
@@ -153,6 +159,7 @@ private fun ViewerFilterPanel(
     onTimeRangeChanged: (Long?, Long?) -> Unit,
     onTraceIdSelected: (String?) -> Unit,
     onFiltersCleared: () -> Unit,
+    onExportRequested: (ExportScope) -> Unit,
 ) {
     val filter = state.filter
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
@@ -221,9 +228,48 @@ private fun ViewerFilterPanel(
                 modifier = Modifier.weight(1f),
             )
         }
+        ExportScopeEntries(
+            filter = filter,
+            export = state.export,
+            onExportRequested = onExportRequested,
+        )
+    }
+}
+
+/**
+ * Export menu (issue #6, minimal): one entry per scope — the current filter,
+ * the last [RECENT_EXPORT_HOURS] hours and the pinned trace. The trace entry
+ * only appears while a trace is pinned; export progress/failure is a single
+ * status line, the ready payload is consumed by the share launcher.
+ */
+@Composable
+private fun ExportScopeEntries(
+    filter: EventFilter,
+    export: ResultState<ExportSharePayload>?,
+    onExportRequested: (ExportScope) -> Unit,
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        TextButton(onClick = { onExportRequested(ExportScope.CurrentFilter(filter)) }) {
+            Text(text = "export: filtered")
+        }
+        TextButton(onClick = { onExportRequested(ExportScope.RecentHours(RECENT_EXPORT_HOURS)) }) {
+            Text(text = "export: last ${RECENT_EXPORT_HOURS}h")
+        }
+    }
+    filter.traceId?.let { traceId ->
+        TextButton(onClick = { onExportRequested(ExportScope.Trace(traceId)) }) {
+            Text(text = "export: this trace")
+        }
+    }
+    when (export) {
+        is ResultState.Loading -> Text(text = "exporting…")
+        is ResultState.Error -> Text(text = export.message)
+        is ResultState.Success -> Unit
+        null -> Unit
     }
 }
 
 private const val LOAD_MORE_THRESHOLD = 10
 private const val ATTR_PREVIEW_COUNT = 2
+private const val RECENT_EXPORT_HOURS = 1
 private val TIME_FORMAT = java.text.SimpleDateFormat("MM-dd HH:mm:ss.SSS", java.util.Locale.US)

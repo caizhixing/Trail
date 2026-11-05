@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Export share seam (behavior 6.5): the exporter's default write directory
+     is cacheDir/trail_exports, shared via the trail-debug FileProvider. -->
+<paths>
+    <cache-path
+        name="trail_exports"
+        path="trail_exports/" />
+</paths>
