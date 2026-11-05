@@ -3,6 +3,7 @@ package io.github.caizhixing.trail.debug.viewer
 import io.github.caizhixing.trail.model.Audience
 import io.github.caizhixing.trail.model.Level
 import io.github.caizhixing.trail.model.LogEvent
+import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -13,9 +14,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * ViewModel orchestration (behaviors 5.1 / 5.3 / 5.4 / 5.7) with an
- * injected Unconfined dispatcher plus fake repository / preferences — the
- * whole viewer business logic runs on the JVM (DECISIONS.md「测试栈」).
+ * ViewModel orchestration (behaviors 5.1 / 5.3 / 5.4 / 5.7) with both the
+ * UI and IO dispatchers injected as `Unconfined` plus fake repository /
+ * preferences — the whole viewer business logic, including the paging walk,
+ * runs synchronously on the JVM (DECISIONS.md「测试栈」).
  */
 class ViewerViewModelTest {
 
@@ -24,15 +26,28 @@ class ViewerViewModelTest {
         var file: List<LogEvent> = emptyList(),
     ) : ViewerRepository {
         val fileCalls = mutableListOf<Pair<Int, Int>>()
+        var diskReads = 0
+        var onDiskRead: () -> Unit = {}
+        var failNextFileRead = false
 
         override fun memoryEvents(): List<LogEvent> = memory
 
         override fun fileEvents(offset: Int, limit: Int): List<LogEvent> {
             fileCalls.add(offset to limit)
+            diskReads++
+            onDiskRead()
+            if (failNextFileRead) {
+                failNextFileRead = false
+                throw IOException("simulated history read failure")
+            }
             return file.drop(offset).take(limit)
         }
 
-        override fun fileEventCount(): Int = file.size
+        override fun fileEventCount(): Int {
+            diskReads++
+            onDiskRead()
+            return file.size
+        }
     }
 
     private class FakePreferences : ViewerPreferences {
@@ -65,6 +80,16 @@ class ViewerViewModelTest {
         tid = null,
     )
 
+    private fun newViewModel(
+        repository: FakeViewerRepository,
+        preferences: ViewerPreferences = FakePreferences(),
+    ): ViewerViewModel = ViewerViewModel(
+        repository,
+        preferences,
+        Dispatchers.Unconfined,
+        Dispatchers.Unconfined,
+    )
+
     private fun content(state: ViewerUiState): ViewerUiState.Content =
         state as ViewerUiState.Content
 
@@ -77,7 +102,7 @@ class ViewerViewModelTest {
                 event(300, audience = Audience.BOTH),
             ),
         )
-        val viewModel = ViewerViewModel(repository, FakePreferences(), Dispatchers.Unconfined)
+        val viewModel = newViewModel(repository)
 
         val state = content(viewModel.uiState.value)
 
@@ -96,7 +121,7 @@ class ViewerViewModelTest {
                 event(200, audience = Audience.AI),
             ),
         )
-        val viewModel = ViewerViewModel(repository, preferences, Dispatchers.Unconfined)
+        val viewModel = newViewModel(repository, preferences)
 
         val state = content(viewModel.uiState.value)
 
@@ -111,7 +136,7 @@ class ViewerViewModelTest {
         val repository = FakeViewerRepository(
             memory = listOf(event(100, audience = Audience.AI)),
         )
-        val viewModel = ViewerViewModel(repository, preferences, Dispatchers.Unconfined)
+        val viewModel = newViewModel(repository, preferences)
 
         assertTrue(content(viewModel.uiState.value).conciseView)
         assertTrue(content(viewModel.uiState.value).events.isEmpty())
@@ -120,10 +145,9 @@ class ViewerViewModelTest {
     @Test
     fun togglingConciseViewIsRemembered() = runBlocking {
         val preferences = FakePreferences()
-        val viewModel = ViewerViewModel(
+        val viewModel = newViewModel(
             FakeViewerRepository(memory = listOf(event(100))),
             preferences,
-            Dispatchers.Unconfined,
         )
 
         viewModel.onConciseViewToggled(false)
@@ -142,7 +166,7 @@ class ViewerViewModelTest {
     }
 
     @Test
-    fun audienceChipExitsConciseModeAndPersistsFullView() = runBlocking {
+    fun audienceChipSwitchIsSessionScopedAndRestartRestoresConcise() = runBlocking {
         val preferences = FakePreferences()
         val repository = FakeViewerRepository(
             memory = listOf(
@@ -150,19 +174,27 @@ class ViewerViewModelTest {
                 event(200, audience = Audience.AI),
             ),
         )
-        val viewModel = ViewerViewModel(repository, preferences, Dispatchers.Unconfined)
+        val viewModel = newViewModel(repository, preferences)
 
         viewModel.onAudienceToggled(Audience.AI)
 
         val state = content(viewModel.uiState.value)
-        assertFalse("manual audience edit leaves concise mode", state.conciseView)
+        assertFalse("manual audience edit leaves concise mode for this session", state.conciseView)
         assertEquals(setOf(Audience.HUMAN, Audience.BOTH, Audience.AI), state.filter.audiences)
-        assertEquals(false, preferences.stored)
         assertEquals(listOf(200L, 100L), state.events.map { it.ts })
 
         viewModel.onAudienceToggled(Audience.HUMAN)
         assertEquals(setOf(Audience.BOTH, Audience.AI), content(viewModel.uiState.value).filter.audiences)
         assertEquals(listOf(200L), content(viewModel.uiState.value).events.map { it.ts })
+
+        assertNull("chips never write preferences", preferences.stored)
+        assertEquals(0, preferences.writeCount)
+
+        val restarted = newViewModel(repository, preferences)
+        val restored = content(restarted.uiState.value)
+        assertTrue("restart falls back to the persisted choice: still concise", restored.conciseView)
+        assertEquals(setOf(Audience.HUMAN, Audience.BOTH), restored.filter.audiences)
+        assertEquals("AI hidden again after restart", listOf(100L), restored.events.map { it.ts })
     }
 
     @Test
@@ -173,7 +205,7 @@ class ViewerViewModelTest {
                 event(200, level = Level.ERROR),
             ),
         )
-        val viewModel = ViewerViewModel(repository, FakePreferences(), Dispatchers.Unconfined)
+        val viewModel = newViewModel(repository)
 
         viewModel.onLevelToggled(Level.ERROR)
 
@@ -190,7 +222,7 @@ class ViewerViewModelTest {
         val repository = FakeViewerRepository(
             memory = listOf(event(100, tag = "payment"), event(200, tag = "widget")),
         )
-        val viewModel = ViewerViewModel(repository, FakePreferences(), Dispatchers.Unconfined)
+        val viewModel = newViewModel(repository)
 
         viewModel.onTagsChanged(setOf("payment"))
 
@@ -208,7 +240,7 @@ class ViewerViewModelTest {
                 event(200, tag = "widget", name = "rendered"),
             ),
         )
-        val viewModel = ViewerViewModel(repository, FakePreferences(), Dispatchers.Unconfined)
+        val viewModel = newViewModel(repository)
 
         viewModel.onKeywordChanged("charged")
 
@@ -225,7 +257,7 @@ class ViewerViewModelTest {
         val repository = FakeViewerRepository(
             memory = listOf(event(100), event(200), event(300)),
         )
-        val viewModel = ViewerViewModel(repository, FakePreferences(), Dispatchers.Unconfined)
+        val viewModel = newViewModel(repository)
 
         viewModel.onTimeRangeChanged(from = 200L, to = 300L)
 
@@ -241,7 +273,7 @@ class ViewerViewModelTest {
                 event(300, traceId = "t_a"),
             ),
         )
-        val viewModel = ViewerViewModel(repository, FakePreferences(), Dispatchers.Unconfined)
+        val viewModel = newViewModel(repository)
 
         viewModel.onTraceIdSelected("t_a")
 
@@ -261,7 +293,7 @@ class ViewerViewModelTest {
     fun eventSelectionOpensAndDismissesDetail() = runBlocking {
         val target = event(100)
         val repository = FakeViewerRepository(memory = listOf(target, event(200)))
-        val viewModel = ViewerViewModel(repository, FakePreferences(), Dispatchers.Unconfined)
+        val viewModel = newViewModel(repository)
 
         viewModel.onEventSelected(target)
         assertSame(target, content(viewModel.uiState.value).selected)
@@ -276,7 +308,7 @@ class ViewerViewModelTest {
             memory = listOf(event(30), event(31), event(32)),
             file = listOf(event(11), event(12), event(30), event(31), event(32)),
         )
-        val viewModel = ViewerViewModel(repository, FakePreferences(), Dispatchers.Unconfined)
+        val viewModel = newViewModel(repository)
         assertEquals("first screen is memory only", listOf(32L, 31L, 30L), content(viewModel.uiState.value).events.map { it.ts })
 
         viewModel.onLoadMore()
@@ -300,7 +332,7 @@ class ViewerViewModelTest {
             memory = (250 until 450).map { event(it.toLong()) },
             file = file,
         )
-        val viewModel = ViewerViewModel(repository, FakePreferences(), Dispatchers.Unconfined)
+        val viewModel = newViewModel(repository)
         assertEquals(200, content(viewModel.uiState.value).events.size)
 
         viewModel.onLoadMore()
@@ -322,7 +354,11 @@ class ViewerViewModelTest {
 
         viewModel.onLoadMore()
         assertTrue(content(viewModel.uiState.value).endReached)
-        assertEquals(3, repository.fileCalls.size)
+        assertEquals(
+            "the clamped tail page reads only the unconsumed lines",
+            listOf(250 to 200, 50 to 200, 0 to 50),
+            repository.fileCalls,
+        )
     }
 
     @Test
@@ -332,7 +368,7 @@ class ViewerViewModelTest {
             memory = file,
             file = file,
         )
-        val viewModel = ViewerViewModel(repository, FakePreferences(), Dispatchers.Unconfined)
+        val viewModel = newViewModel(repository)
 
         viewModel.onLoadMore()
 
@@ -348,7 +384,7 @@ class ViewerViewModelTest {
             memory = emptyList(),
             file = listOf(event(10), event(11)),
         )
-        val viewModel = ViewerViewModel(repository, FakePreferences(), Dispatchers.Unconfined)
+        val viewModel = newViewModel(repository)
         assertTrue(content(viewModel.uiState.value).events.isEmpty())
         assertFalse(content(viewModel.uiState.value).endReached)
 
@@ -360,7 +396,7 @@ class ViewerViewModelTest {
     @Test
     fun noSourceAtAllEndsReachableImmediately() = runBlocking {
         val repository = FakeViewerRepository()
-        val viewModel = ViewerViewModel(repository, FakePreferences(), Dispatchers.Unconfined)
+        val viewModel = newViewModel(repository)
 
         val state = content(viewModel.uiState.value)
 
@@ -372,12 +408,101 @@ class ViewerViewModelTest {
     }
 
     @Test
+    fun loadMoreExposesLoadingOlderWhileReadingAndResetsAfterCompletion() = runBlocking {
+        val repository = FakeViewerRepository(
+            memory = listOf(event(30)),
+            file = listOf(event(11), event(30)),
+        )
+        val viewModel = newViewModel(repository)
+        val loadingOlderDuringReads = mutableListOf<Boolean>()
+        repository.onDiskRead = {
+            loadingOlderDuringReads.add(content(viewModel.uiState.value).loadingOlder)
+        }
+
+        viewModel.onLoadMore()
+
+        assertEquals(
+            "every history read happens while loadingOlder is observably true",
+            listOf(true, true),
+            loadingOlderDuringReads,
+        )
+        val state = content(viewModel.uiState.value)
+        assertFalse("the flag clears once the page is merged", state.loadingOlder)
+        assertEquals(listOf(30L, 11L), state.events.map { it.ts })
+    }
+
+    @Test
+    fun loadMoreIsIgnoredWhileAnOlderPageLoadIsInFlight() = runBlocking {
+        val repository = FakeViewerRepository(
+            memory = listOf(event(30)),
+            file = listOf(event(11), event(30)),
+        )
+        val viewModel = newViewModel(repository)
+        val baselineReads = repository.diskReads
+        var reentrantTriggers = 0
+        repository.onDiskRead = {
+            reentrantTriggers++
+            viewModel.onLoadMore()
+        }
+
+        viewModel.onLoadMore()
+
+        assertEquals(2, reentrantTriggers)
+        assertEquals("guarded re-entrant triggers perform no extra disk reads", baselineReads + 2, repository.diskReads)
+        assertFalse(content(viewModel.uiState.value).loadingOlder)
+    }
+
+    @Test
+    fun loadMoreResetsLoadingOlderWhenAFileReadFailsAndRetriesSucceed() = runBlocking {
+        val repository = FakeViewerRepository(
+            memory = listOf(event(30)),
+            file = listOf(event(11), event(30)),
+        )
+        val viewModel = newViewModel(repository)
+
+        repository.failNextFileRead = true
+        viewModel.onLoadMore()
+
+        val failed = content(viewModel.uiState.value)
+        assertFalse("a failed read still clears the loading flag", failed.loadingOlder)
+        assertFalse(failed.endReached)
+        assertEquals("nothing merged from the failed read", listOf(30L), failed.events.map { it.ts })
+
+        viewModel.onLoadMore()
+
+        assertEquals(
+            "retry resumes from the uncommitted offset",
+            listOf(30L, 11L),
+            content(viewModel.uiState.value).events.map { it.ts },
+        )
+    }
+
+    @Test
+    fun sameMillisecondDuplicatesInAFilePageAreAllDisplayed() = runBlocking {
+        val duplicate = event(10)
+        val repository = FakeViewerRepository(
+            memory = listOf(event(50)),
+            file = listOf(duplicate, duplicate),
+        )
+        val viewModel = newViewModel(repository)
+
+        viewModel.onLoadMore()
+
+        val state = content(viewModel.uiState.value)
+        assertEquals(
+            "same-millisecond repeated emissions in one file page are all shown",
+            listOf(50L, 10L, 10L),
+            state.events.map { it.ts },
+        )
+    }
+
+    @Test
     fun refreshPullsNewMemoryEventsAndKeepsLoadedHistory() = runBlocking {
         val repository = FakeViewerRepository(
             memory = listOf(event(30)),
             file = listOf(event(11), event(30)),
         )
-        val viewModel = ViewerViewModel(repository, FakePreferences(), Dispatchers.Unconfined)
+        val viewModel = newViewModel(repository)
         viewModel.onLoadMore()
         assertEquals(listOf(30L, 11L), content(viewModel.uiState.value).events.map { it.ts })
 
@@ -399,7 +524,7 @@ class ViewerViewModelTest {
                 event(200, audience = Audience.BOTH),
             ),
         )
-        val viewModel = ViewerViewModel(repository, FakePreferences(), Dispatchers.Unconfined)
+        val viewModel = newViewModel(repository)
         viewModel.onKeywordChanged("e100")
         viewModel.onLevelToggled(Level.ERROR)
 

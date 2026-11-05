@@ -13,21 +13,26 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.withContext
 
 /**
  * Viewer orchestration (behaviors 5.1 / 5.3 / 5.4 / 5.7). The merged source
  * (memory ring ∪ file pages) is loaded incrementally; the displayed list is
- * the merged set narrowed by the active six-dimension filter. Dispatcher is
- * constructor-injected (JUnit4 tests pass `Unconfined`, DECISIONS.md「测试栈」).
+ * the merged set narrowed by the active six-dimension filter. Both the UI
+ * dispatcher and the IO dispatcher are constructor-injected (JUnit4 tests
+ * pass `Unconfined` for each, DECISIONS.md「测试栈」).
  */
 internal class ViewerViewModel(
     private val repository: ViewerRepository,
     private val preferences: ViewerPreferences,
     dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
 
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
 
+    private var memorySnapshot: List<LogEvent> = emptyList()
+    private var loadedFileEvents: List<LogEvent> = emptyList()
     private var mergedEvents: List<LogEvent> = emptyList()
     private var fileOffset: Int? = null
     private var endReached = false
@@ -52,34 +57,30 @@ internal class ViewerViewModel(
         scope.launch { reload() }
     }
 
-    /** Pagination trigger from the list (behavior 5.3 / 5.8). */
+    /**
+     * Pagination trigger from the list (behavior 5.3 / 5.8). Runs as a
+     * coroutine so every history read happens on the IO dispatcher — never
+     * on the calling (UI) thread — and `loadingOlder` stays observably true
+     * for the whole read (review r1 blocker).
+     */
     fun onLoadMore() {
         if (loadingOlder || endReached) {
             return
         }
         loadingOlder = true
         publish()
-        var grew = false
-        while (!grew) {
-            val offset = ViewerPaging.nextFileOffset(fileOffset, repository.fileEventCount())
-            if (offset == null) {
-                endReached = true
-                break
+        scope.launch {
+            try {
+                walkOlderFilePages()
+            } catch (_: Exception) {
+                // A failed history read keeps the merged list as-is; the
+                // flag reset below makes the failure observable and the
+                // uncommitted page retryable.
+            } finally {
+                loadingOlder = false
+                publish()
             }
-            fileOffset = offset
-            val merged = ViewerPaging.mergeOlderPage(
-                loaded = mergedEvents,
-                filePage = repository.fileEvents(offset, ViewerPaging.PAGE_SIZE),
-            )
-            if (merged.size > mergedEvents.size) {
-                mergedEvents = merged
-                grew = true
-            }
-            // A fully duplicated page (already covered by the memory ring)
-            // keeps walking older pages until something new appears.
         }
-        loadingOlder = false
-        publish()
     }
 
     /** Behavior 5.4: focusing an event's trace pins the trace filter. */
@@ -108,14 +109,16 @@ internal class ViewerViewModel(
     }
 
     /**
-     * Manual audience edits always leave concise mode ("switch to full view
-     * is remembered"); the chip set then behaves as a plain multi-select.
+     * Audience chips are a session-scoped temporary switch (main-agent
+     * ruling ②): the in-memory filter changes and concise mode is left for
+     * this session, but nothing is persisted — only the explicit
+     * concise/full switch writes preferences, so a fresh viewer restores
+     * the persisted choice.
      */
     fun onAudienceToggled(audience: Audience) {
         val base = if (conciseView) ConciseViewPolicy.audiencesFor(true) else filter.audiences
         val next = if (audience in base) base - audience else base + audience
         conciseView = false
-        preferences.setConciseView(false)
         filter = filter.copy(audiences = next)
         publish()
     }
@@ -152,16 +155,42 @@ internal class ViewerViewModel(
     }
 
     private suspend fun reload() {
-        val fresh = ViewerPaging.initialPage(repository.memoryEvents())
-        mergedEvents = if (mergedEvents.isEmpty()) {
-            fresh
-        } else {
-            ViewerPaging.mergeOlderPage(loaded = fresh, filePage = mergedEvents)
-        }
-        if (repository.fileEventCount() == 0) {
+        // The ring lives in memory; only the history count touches disk.
+        memorySnapshot = repository.memoryEvents()
+        if (withContext(ioDispatcher) { repository.fileEventCount() } == 0) {
             endReached = true
         }
+        mergedEvents = ViewerPaging.mergeSources(memorySnapshot, loadedFileEvents)
         publish()
+    }
+
+    /**
+     * Newest-first walk of the on-disk history with all reads dispatched to
+     * [ioDispatcher]. A fully ring-covered page (nothing new after the
+     * cross-source dedupe) keeps the walk going until something new appears.
+     */
+    private suspend fun walkOlderFilePages() {
+        var grew = false
+        while (!grew) {
+            val fileCount = withContext(ioDispatcher) { repository.fileEventCount() }
+            val offset = ViewerPaging.nextFileOffset(fileOffset, fileCount)
+            if (offset == null) {
+                endReached = true
+                return
+            }
+            val page = withContext(ioDispatcher) {
+                repository.fileEvents(offset, ViewerPaging.pageLimitFor(offset, fileOffset))
+            }
+            // Commit the offset only after a successful read so a failed
+            // page can be retried without skipping history lines.
+            fileOffset = offset
+            if (page.isNotEmpty()) {
+                loadedFileEvents = loadedFileEvents + page
+            }
+            val merged = ViewerPaging.mergeSources(memorySnapshot, loadedFileEvents)
+            grew = merged.size > mergedEvents.size
+            mergedEvents = merged
+        }
     }
 
     private fun publish() {
