@@ -11,6 +11,8 @@ import io.github.caizhixing.trail.debug.engine.TrailSnapshotStore
 import io.github.caizhixing.trail.debug.trace.TraceBridge
 import io.github.caizhixing.trail.debug.trace.TraceContext
 import io.github.caizhixing.trail.debug.trace.TraceIds
+import io.github.caizhixing.trail.debug.viewer.AndroidViewerNotifier
+import io.github.caizhixing.trail.debug.viewer.ViewerNotifier
 import io.github.caizhixing.trail.model.Audience
 import io.github.caizhixing.trail.model.Level
 import io.github.caizhixing.trail.model.LogEvent
@@ -38,6 +40,11 @@ internal object TrailImpl {
     // debug snapshots only; once init happens they are NOT flushed to disk.
     private val preInitRing = RingBuffer(TrailConfig().ringCapacity)
 
+    // Issue #5: injectable notifier seam so JVM tests can assert the entry
+    // notification wiring without framework classes.
+    @Volatile
+    internal var viewerNotifier: ViewerNotifier = AndroidViewerNotifier
+
     internal fun init(context: Context, config: TrailConfig) {
         installEngine(
             config = config,
@@ -46,6 +53,12 @@ internal object TrailImpl {
             logger = AndroidBridges.logcatLogger,
             echoSink = resolveEchoSink(config, AndroidBridges.logcatEchoSink),
         )
+        notifyViewerEntry(context)
+    }
+
+    /** Behavior 5.6: persistent viewer entry notification after init. */
+    internal fun notifyViewerEntry(context: Context) {
+        viewerNotifier.showEntryNotification(context)
     }
 
     /** Fully injected assembly seam for unit tests and internal callers. */

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="trail_viewer_channel_name">Trail Viewer</string>
+    <string name="trail_viewer_notification_title">Trail Viewer</string>
+    <string name="trail_viewer_notification_text">Tap to browse captured Trail events</string>
+</resources>
