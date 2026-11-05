@@ -11,7 +11,7 @@ class TrailTraceShellTest {
 
     @Before
     fun resetCollector() {
-        TrailImpl.recentEvents.clear()
+        TrailImpl.resetForTest()
     }
 
     @Test
