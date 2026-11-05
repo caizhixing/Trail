@@ -12,14 +12,14 @@ class TrailEventDeliveryTest {
 
     @Before
     fun resetCollector() {
-        TrailImpl.recentEvents.clear()
+        TrailImpl.resetForTest()
     }
 
     @Test
     fun eventLambdaOverloadDeliversCompleteAiInfoEvent() {
         Trail.event("widget", "trail_test_bind_start") { mapOf("slot" to "search") }
 
-        val events = TrailImpl.recentEvents.snapshot()
+        val events = TrailImpl.debugEvents()
         assertEquals(1, events.size)
         val event = events[0]
         assertEquals("widget", event.tag)
@@ -37,7 +37,7 @@ class TrailEventDeliveryTest {
     fun eventLambdaOverloadDefaultsAttrsToEmptyMap() {
         Trail.event("widget", "trail_test_no_attrs")
 
-        val events = TrailImpl.recentEvents.snapshot()
+        val events = TrailImpl.debugEvents()
         assertEquals(1, events.size)
         assertEquals(emptyMap<String, String>(), events[0].attrs)
     }
@@ -46,7 +46,7 @@ class TrailEventDeliveryTest {
     fun flowLambdaOverloadIsHumanInfo() {
         Trail.flow("search", "trail_test_query_submitted") { mapOf("query_length" to "3") }
 
-        val event = TrailImpl.recentEvents.snapshot().single()
+        val event = TrailImpl.debugEvents().single()
         assertEquals("search", event.tag)
         assertEquals("trail_test_query_submitted", event.name)
         assertEquals(Audience.HUMAN, event.audience)
@@ -58,7 +58,7 @@ class TrailEventDeliveryTest {
     fun flowLambdaOverloadDefaultsAttrsToEmptyMap() {
         Trail.flow("search", "trail_test_flow_no_attrs")
 
-        val event = TrailImpl.recentEvents.snapshot().single()
+        val event = TrailImpl.debugEvents().single()
         assertEquals(emptyMap<String, String>(), event.attrs)
     }
 
@@ -66,7 +66,7 @@ class TrailEventDeliveryTest {
     fun explicitAudienceLevelOverloadPassesValuesThrough() {
         Trail.event("network", "trail_test_retry_scheduled", Audience.BOTH, Level.WARN) { mapOf("attempt" to "2") }
 
-        val event = TrailImpl.recentEvents.snapshot().single()
+        val event = TrailImpl.debugEvents().single()
         assertEquals(Audience.BOTH, event.audience)
         assertEquals(Level.WARN, event.level)
         assertEquals("network", event.tag)
@@ -78,7 +78,7 @@ class TrailEventDeliveryTest {
     fun explicitOverloadDefaultsAttrsToEmptyMap() {
         Trail.event("network", "trail_test_explicit_no_attrs", Audience.AI, Level.ERROR)
 
-        val event = TrailImpl.recentEvents.snapshot().single()
+        val event = TrailImpl.debugEvents().single()
         assertEquals(Audience.AI, event.audience)
         assertEquals(Level.ERROR, event.level)
         assertEquals(emptyMap<String, String>(), event.attrs)
@@ -88,7 +88,7 @@ class TrailEventDeliveryTest {
     fun eventMapOverloadBehavesLikeLambdaOverload() {
         Trail.event("widget", "trail_test_map_overload", mapOf("lang" to "java"))
 
-        val event = TrailImpl.recentEvents.snapshot().single()
+        val event = TrailImpl.debugEvents().single()
         assertEquals("widget", event.tag)
         assertEquals("trail_test_map_overload", event.name)
         assertEquals(Audience.AI, event.audience)
@@ -101,7 +101,7 @@ class TrailEventDeliveryTest {
     fun eventMapOverloadWithAudienceLevelPassesValuesThrough() {
         Trail.event("network", "trail_test_map_explicit", Audience.HUMAN, Level.ERROR, mapOf("source" to "legacy"))
 
-        val event = TrailImpl.recentEvents.snapshot().single()
+        val event = TrailImpl.debugEvents().single()
         assertEquals(Audience.HUMAN, event.audience)
         assertEquals(Level.ERROR, event.level)
         assertEquals(mapOf("source" to "legacy"), event.attrs)
@@ -111,7 +111,7 @@ class TrailEventDeliveryTest {
     fun flowMapOverloadIsHumanInfo() {
         Trail.flow("search", "trail_test_flow_map", mapOf("lang" to "java"))
 
-        val event = TrailImpl.recentEvents.snapshot().single()
+        val event = TrailImpl.debugEvents().single()
         assertEquals(Audience.HUMAN, event.audience)
         assertEquals(Level.INFO, event.level)
         assertEquals(mapOf("lang" to "java"), event.attrs)
@@ -127,7 +127,7 @@ class TrailEventDeliveryTest {
         }
 
         assertEquals(1, evaluations)
-        assertEquals(mapOf("evaluation" to "lazy"), TrailImpl.recentEvents.snapshot().single().attrs)
+        assertEquals(mapOf("evaluation" to "lazy"), TrailImpl.debugEvents().single().attrs)
     }
 
     @Test
@@ -135,7 +135,7 @@ class TrailEventDeliveryTest {
         Trail.flow("search", "trail_test_first")
         Trail.event("widget", "trail_test_second")
 
-        val events = TrailImpl.recentEvents.snapshot()
+        val events = TrailImpl.debugEvents()
         assertEquals(2, events.size)
         assertEquals("trail_test_first", events[0].name)
         assertEquals("trail_test_second", events[1].name)
