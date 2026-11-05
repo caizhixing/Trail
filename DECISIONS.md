@@ -8,6 +8,9 @@
 ### 2026-11-05 reviewer 模型变更（k3$max → deepseek-v4-pro 裸 ID）
 阶段 0 选定的 `new-provider/k3$max` 与 `new-provider/k3` 在本 harness 的 workflow 子代理路径实测静默失败（对照组会话模型正常；`new-provider/` 前缀路径整体不可用）。用户改指定 `deepseek-v4-pro`；裸 ID（不带 provider 覆盖）冒烟实测可用。skill 记录的「deepseek-v4-pro 思考模式不可作子代理」限制针对 `new-provider/` 前缀路径，裸 ID 路径实测不受影响。家族 DeepSeek ≠ GLM（worker）✓ 仍合规。
 
+### 2026-11-05 契约修订 A：Trail 增加显式 traceId 重载（用户拍板）
+issue #7 揭示 PRD 内部不一致：§2.6 冻结「http 事件 traceId = trailTraced() 调用点捕获值」，但 §2.3 的 Trail API 无通道写 LogEvent.traceId（interceptor 跑在 OkHttp 线程，协程上下文已不在；withTrace 生成新 id 而非复用）。用户三选一拍板 A：三工件（debug/noop/spi）同步增加非 inline 重载 `event(tag, name, traceId: String?, audience, level, attrs: Map)`——debug 用显式 traceId 覆盖上下文查找，noop 空体，spi 加桩。被否备选：B 捕获值存保留 attr `trace_id`（§2.6 语义降级，查看器需特判）；C 真实 debug 工件集成测试（JVM 模块禁 android 依赖，不可行）。#2 的 JVM 签名集合同步更新归 #7。
+
 ### 2026-11-05 D-1 结项：withTrace 壳类 R8 全消实证（PR #10 / issue #2）
 sample 生产代码保留无法常量门消除的真实 `Trail.withTrace` 调用点（SampleTraceSeed，纯 stdlib startCoroutine 驱动），productionRelease 全部 dex 零 `io/github/caizhixing/trail` 库串、零 `trail_sample_` 特征串；R8 `mapping.txt` 显示 `Trail -> R8$$REMOVED$$CLASS`、`usage.txt` 列全部 trail 类已删。反向实证：internalRelease dex 命中库串 ×3 + 特征串 ×9（扫描器非假阴性，且已固化为脚本 Check 4）。**验收 A-② 按严格口径执行，无需壳类豁免降级。**评审附注（记档）：混淆开启时"库命名空间串扫描"存在盲区，混淆无关的硬证据是特征串 + mapping/usage 检查——已追加至 issue #8 行为 8.5（终验时脚本断言升级为 mapping.txt 检查）。
 

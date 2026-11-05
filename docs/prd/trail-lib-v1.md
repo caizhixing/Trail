@@ -98,6 +98,9 @@ object Trail {
     fun event(tag: String, name: String, audience: Audience, level: Level, attrs: Map<String, String>)
     fun flow(tag: String, name: String, attrs: Map<String, String>)
 
+    // 显式 traceId 入口（2026-11-05 契约修订 A：供 okhttp 等非协程上下文调用方归因；traceId 覆盖上下文查找，null 则事件 traceId=null）
+    fun event(tag: String, name: String, traceId: String?, audience: Audience, level: Level, attrs: Map<String, String>)
+
     // trace（非 inline suspend 壳，理由见 DECISIONS.md；block 内 suspending 调用合法）
     suspend fun <T> withTrace(name: String, block: suspend () -> T): T
     fun currentTraceId(): String?          // 协程上下文优先，其次手动桥接 ThreadLocal 栈顶
@@ -118,7 +121,7 @@ object Trail {
 
 ```kotlin
 package io.github.caizhixing.trail
-// 仅 event/flow 的 Map 重载 + withTrace + currentTraceId + dumpRecent；全部非 inline；
+// 仅 event/flow 的 Map 重载（含 2026-11-05 修订的显式 traceId 重载）+ withTrace + currentTraceId + dumpRecent；全部非 inline；
 // TrailGate 桩常量值无意义（compileOnly，永不上运行类路径）。禁止任何发布工件依赖 spi。
 ```
 
