@@ -21,6 +21,23 @@ object Trail {
     fun event(tag: String, name: String, audience: Audience, level: Level, attrs: Map<String, String>) {
     }
 
+    /**
+     * Explicit traceId entry (PRD §2.3, contract revision A / issue #7 ruling):
+     * lets non-coroutine callers such as the okhttp interceptor attribute an
+     * event to the trace captured at the request call site. The stub stays
+     * JVM-identical to the debug/noop facades and records nothing.
+     */
+    @JvmStatic
+    fun event(
+        tag: String,
+        name: String,
+        traceId: String?,
+        audience: Audience,
+        level: Level,
+        attrs: Map<String, String>,
+    ) {
+    }
+
     @JvmStatic
     fun flow(tag: String, name: String, attrs: Map<String, String>) {
     }

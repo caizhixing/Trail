@@ -34,6 +34,7 @@ class SpiStubTest {
         val expected = setOf(
             "event(java.lang.String,java.lang.String,java.util.Map)",
             "event(java.lang.String,java.lang.String,io.github.caizhixing.trail.model.Audience,io.github.caizhixing.trail.model.Level,java.util.Map)",
+            "event(java.lang.String,java.lang.String,java.lang.String,io.github.caizhixing.trail.model.Audience,io.github.caizhixing.trail.model.Level,java.util.Map)",
             "flow(java.lang.String,java.lang.String,java.util.Map)",
             "withTrace(java.lang.String,kotlin.jvm.functions.Function1,kotlin.coroutines.Continuation)",
             "currentTraceId()",
@@ -80,6 +81,17 @@ class SpiStubTest {
         Trail.event("widget", "trail_test_spi_map", attrs)
         Trail.event("widget", "trail_test_spi_map_explicit", Audience.BOTH, Level.WARN, attrs)
         Trail.flow("search", "trail_test_spi_flow_map", attrs)
+
+        assertEquals(0, attrs.reads)
+        assertEquals("", Trail.dumpRecent(10))
+    }
+
+    @Test
+    fun explicitTraceIdOverloadStubNeverReadsAttrsAndRecordsNothing() {
+        val attrs = ReadCountingMap()
+
+        Trail.event("network", "trail_test_spi_explicit_trace", "t_0123456789abcdef", Audience.AI, Level.INFO, attrs)
+        Trail.event("network", "trail_test_spi_explicit_trace_null", null, Audience.AI, Level.WARN, attrs)
 
         assertEquals(0, attrs.reads)
         assertEquals("", Trail.dumpRecent(10))
