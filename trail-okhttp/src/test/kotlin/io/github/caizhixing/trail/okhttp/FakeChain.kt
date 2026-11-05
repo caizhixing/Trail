@@ -1,7 +1,10 @@
 package io.github.caizhixing.trail.okhttp
 
+import java.net.Proxy
+import java.net.ProxySelector
 import java.util.concurrent.TimeUnit
 import javax.net.SocketFactory
+import javax.net.ssl.HostnameVerifier
 import javax.net.ssl.SSLSocketFactory
 import javax.net.ssl.X509TrustManager
 import okhttp3.Authenticator
@@ -13,12 +16,9 @@ import okhttp3.ConnectionPool
 import okhttp3.CookieJar
 import okhttp3.Dns
 import okhttp3.EventListener
-import okhttp3.HostnameVerifier
 import okhttp3.Interceptor
 import okhttp3.MediaType
 import okhttp3.Protocol
-import okhttp3.Proxy
-import okhttp3.ProxySelector
 import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
