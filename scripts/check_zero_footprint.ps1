@@ -1,8 +1,9 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Zero-footprint acceptance check for the Trail library (issue #2, workflow
-    PRD docs/prd/trail-lib-v1.md section 4, behavior 2.11).
+    Zero-footprint acceptance check for the Trail library (issue #2 behavior
+    2.11, upgraded by issue #8 behavior 8.5; workflow PRD
+    docs/prd/trail-lib-v1.md section 4).
 
 .DESCRIPTION
     Checks, all against the offline-frozen toolchain (every gradle call runs
@@ -11,7 +12,8 @@
       1. productionReleaseRuntimeClasspath of :sample-app contains NO trail-debug.
       2. Every classes*.dex inside the productionRelease APK contains NO
          io/github/caizhixing/trail library string and NO "trail_sample_"
-         event-name marker string.
+         event-name marker string (the marker prefix covers the Kotlin AND the
+         Java seeded call sites alike).
       3. Reverse assertion: internalReleaseRuntimeClasspath DOES contain
          trail-debug.
       4. Reverse byte-scan: the internalRelease APK dex contains at least one
@@ -19,6 +21,20 @@
          prefix, e.g. R8-kept Trail class descriptors) AND at least one
          "trail_sample_" marker string, proving check 2 absence comes from
          removal, not from a broken scan.
+      5. Obfuscation-independent hard evidence from R8's own artifacts in
+         sample-app/build/outputs/mapping/productionRelease/:
+           5a. mapping.txt must NOT map any io.github.caizhixing.trail.<library
+               class> (sample namespace excluded) to a live name — every
+               library class entry must carry the R8$$REMOVED$$CLASS marker.
+           5b. usage.txt must list those same library classes as removed.
+
+     Why check 5 exists: with minification on, the dex namespace-string scan
+     has a blind spot — R8 renames kept classes to arbitrary short names, so
+     a passing string scan proves "no library string" but not "no library
+     code". mapping.txt/usage.txt are R8's own removal records and are
+     unaffected by obfuscation renaming; together with the marker-string scan
+     they form the zero-footprint acceptance evidence (issue #8 behavior 8.5,
+     adopted from the PR #10 review).
 
     Dex scan pattern note: the sample app namespace itself is
     io.github.caizhixing.trail.sample (frozen in sample-app/build.gradle.kts)
@@ -171,6 +187,75 @@ if ($null -ne $productionApk) {
     }
 
     Write-Host '[INFO] withTrace shell evidence: sample-app keeps a live Trail.withTrace call site (SampleTraceSeed), so the library-string scan above proves the R8 fate of the suspend shell class'
+}
+
+# ---------------------------------------------------------------------------
+# Check 5: obfuscation-independent hard evidence (issue #8, behavior 8.5).
+# R8 artifacts of the productionRelease build live under
+# sample-app/build/outputs/mapping/productionRelease/.
+#   5a. mapping.txt: every io.github.caizhixing.trail.<library class> entry
+#       (sample namespace excluded) must map to R8$$REMOVED$$CLASS; a library
+#       class kept under any live (original or renamed) name is a FAIL.
+#   5b. usage.txt: those same library classes must be listed as removed.
+# With minification on, the dex string scan above has a blind spot (R8 renames
+# kept classes, so no library namespace string survives even if code does);
+# mapping.txt/usage.txt are R8's own removal records and prove class-level
+# removal regardless of obfuscation renaming.
+# Class-scope note: the sample app's own io.github.caizhixing.trail.sample.*
+# classes are NOT library classes (R8 legitimately keeps MainActivity for the
+# manifest) and stay out of scope.
+# ---------------------------------------------------------------------------
+Write-Host '== mapping/usage hard-evidence checks ==' -ForegroundColor Cyan
+$mappingDir = Join-Path $repoRoot (Join-Path 'sample-app' (Join-Path 'build' (Join-Path 'outputs' (Join-Path 'mapping' 'productionRelease'))))
+$mappingPath = Join-Path $mappingDir 'mapping.txt'
+$usagePath = Join-Path $mappingDir 'usage.txt'
+
+if (-not (Test-Path -LiteralPath $mappingPath)) {
+    Write-Fail ("productionRelease mapping.txt not found at " + $mappingPath + " (run :sample-app:assembleProductionRelease first)")
+} elseif (-not (Test-Path -LiteralPath $usagePath)) {
+    Write-Fail ("productionRelease usage.txt not found at " + $usagePath)
+} else {
+    # Class header lines only: "<original> -> <target>:". Member and inline
+    # function lines are indented and therefore excluded by the anchored match.
+    $classHeaderRegex = '^(io\.github\.caizhixing\.trail\.(?!sample\.)[^\s:]+) -> ([^\s:]+):'
+    $removedMarker = 'R8$$REMOVED$$CLASS'
+
+    $libraryClasses = @()
+    $keptClasses = @()
+    foreach ($line in (Get-Content -LiteralPath $mappingPath)) {
+        if ($line.StartsWith(' ') -or $line.StartsWith("`t")) { continue }
+        $headerMatch = [regex]::Match($line, $classHeaderRegex)
+        if (-not $headerMatch.Success) { continue }
+        $original = $headerMatch.Groups[1].Value
+        $target = $headerMatch.Groups[2].Value
+        $libraryClasses += $original
+        if (-not $target.Contains($removedMarker)) {
+            $keptClasses += ($original + ' -> ' + $target)
+        }
+    }
+
+    if ($libraryClasses.Count -eq 0) {
+        Write-Fail 'mapping.txt contains no io.github.caizhixing.trail.* library class entries (unexpected format or empty mapping)'
+    } elseif ($keptClasses.Count -gt 0) {
+        Write-Fail ('mapping.txt keeps trail library classes without the R8$$REMOVED$$CLASS marker: ' + ($keptClasses -join '; '))
+    } else {
+        Write-Pass ('mapping.txt: all ' + $libraryClasses.Count + ' trail library class entries map to R8$$REMOVED$$CLASS')
+    }
+
+    if ($libraryClasses.Count -gt 0) {
+        $removedSet = New-Object 'System.Collections.Generic.HashSet[string]'
+        foreach ($line in (Get-Content -LiteralPath $usagePath)) {
+            $entry = $line.Trim()
+            if ($entry.EndsWith(':')) { $entry = $entry.Substring(0, $entry.Length - 1) }
+            if ($entry.Length -gt 0) { $removedSet.Add($entry) | Out-Null }
+        }
+        $missing = @($libraryClasses | Where-Object { -not $removedSet.Contains($_) })
+        if ($missing.Count -gt 0) {
+            Write-Fail ('usage.txt does not list these trail library classes as removed: ' + ($missing -join ', '))
+        } else {
+            Write-Pass ('usage.txt: all ' + $libraryClasses.Count + ' trail library classes listed as removed (obfuscation-independent hard evidence)')
+        }
+    }
 }
 
 # ---------------------------------------------------------------------------
