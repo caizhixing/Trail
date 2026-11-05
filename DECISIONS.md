@@ -24,6 +24,9 @@ Gradle 9.8.2 + AGP 9.5.0（内置 Kotlin 2.2.10）+ Compose 1.12.1 / material3 1
 
 被否备选：Kotlin 2.4.x 组合（marker / reflect 断链）、compose BOM 2025.10.00（映射到未缓存的 1.9.3 线）、compileSdk 36（compose 1.12 AAR metadata 要求 37）。
 
+### 2026-11-05 library 模块单测任务名契约修正（issue #2 blocked 裁定）
+AGP 9.5.0 默认只为 library 的 **debug** buildType 创建 host unit test 组件：`:trail-noop:testReleaseUnitTest` 不存在。契约命令修正为 `:trail-noop:testDebugUnitTest`（noop 源集与 buildType 无关，语义等价）。被否备选：解冻 build 文件加 `androidComponents.beforeVariants` DSL（为一个空实现模块动冻结配置不值）、TEMP init-script（reviewer 无法复现同命令，破坏评审门禁 1）。
+
 ## 架构（工作流 PRD §2 的定型记录）
 
 ### 2026-11-05 Trail / TrailGate 放 impl 工件（纯 Chuck 模式），trail-api 只放模型

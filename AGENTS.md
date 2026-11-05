@@ -44,9 +44,9 @@
 ```powershell
 # JVM 模块（api / spi / okhttp）
 .\gradlew --offline :trail-api:test
-# Android 库（debug / noop）
+# Android 库（debug / noop）：AGP 9.5 library 默认只为 debug buildType 建 unit test 组件
 .\gradlew --offline :trail-debug:testDebugUnitTest
-.\gradlew --offline :trail-noop:testReleaseUnitTest
+.\gradlew --offline :trail-noop:testDebugUnitTest
 # 变体 APK
 .\gradlew --offline :sample-app:assembleInternalDebug
 .\gradlew --offline :sample-app:assembleInternalRelease
