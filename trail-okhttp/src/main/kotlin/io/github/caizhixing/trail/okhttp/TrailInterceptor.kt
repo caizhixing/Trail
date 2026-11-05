@@ -48,7 +48,7 @@ public class TrailInterceptor(
         try {
             val response = chain.proceed(request)
             val durationMs = (System.nanoTime() - startedAtNanos) / NANOS_PER_MILLIS
-            emitResponseEvent(response, method, url, traceId, durationMs)
+            emitResponseEvent(response, request, method, url, traceId, durationMs)
             return response
         } catch (t: Throwable) {
             Trail.event(
@@ -70,6 +70,7 @@ public class TrailInterceptor(
 
     private fun emitResponseEvent(
         response: Response,
+        request: Request,
         method: String,
         url: String,
         traceId: String?,
@@ -88,6 +89,7 @@ public class TrailInterceptor(
                 put(ATTR_STATUS, response.code.toString())
                 put(ATTR_DURATION_MS, durationMs.toString())
                 bodyAttr(response)?.let { put(ATTR_BODY, it) }
+                putHeaderAttrs(request, this)
             },
         )
     }
@@ -125,9 +127,10 @@ public class TrailInterceptor(
 
     /**
      * Behavior 7.6 extension point: opt-in request-header names copied into
-     * attrs. Masking happens at the source (P-4 key list, case-insensitive
-     * full match) so sensitive values never leave the interceptor; other
-     * values pass through with the P-6 512-char attr cap.
+     * the attrs of all three network events (http_request / http_response /
+     * http_error). Masking happens at the source (P-4 key list,
+     * case-insensitive full match) so sensitive values never leave the
+     * interceptor; other values pass through with the P-6 512-char attr cap.
      */
     private fun putHeaderAttrs(request: Request, into: MutableMap<String, String>) {
         for (name in config.headerAttrs) {
