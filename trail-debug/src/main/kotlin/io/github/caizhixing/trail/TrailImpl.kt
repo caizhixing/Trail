@@ -38,6 +38,31 @@ internal object TrailImpl {
             tid = Thread.currentThread().name,
         )
 
+    /**
+     * Explicit traceId variant (contract revision A / issue #7 ruling): the
+     * given traceId replaces the ambient context lookup instead of augmenting
+     * it; null records null. #4 owns the ambient lookup internals and is not
+     * touched by this overload.
+     */
+    internal fun buildEvent(
+        tag: String,
+        name: String,
+        explicitTraceId: String?,
+        audience: Audience,
+        level: Level,
+        attrs: Map<String, String>,
+    ): LogEvent =
+        LogEvent(
+            ts = System.currentTimeMillis(),
+            traceId = explicitTraceId,
+            tag = tag,
+            name = name,
+            audience = audience,
+            level = level,
+            attrs = attrs,
+            tid = Thread.currentThread().name,
+        )
+
     @PublishedApi
     internal fun event(e: LogEvent) {
         recentEvents.add(e)

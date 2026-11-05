@@ -62,6 +62,7 @@ class DebugTrailJvmSignatureTest {
         val SPI_SHARED_SUBSET = setOf(
             "event(java.lang.String,java.lang.String,java.util.Map)",
             "event(java.lang.String,java.lang.String,io.github.caizhixing.trail.model.Audience,io.github.caizhixing.trail.model.Level,java.util.Map)",
+            "event(java.lang.String,java.lang.String,java.lang.String,io.github.caizhixing.trail.model.Audience,io.github.caizhixing.trail.model.Level,java.util.Map)",
             "flow(java.lang.String,java.lang.String,java.util.Map)",
             "withTrace(java.lang.String,kotlin.jvm.functions.Function1,kotlin.coroutines.Continuation)",
             "currentTraceId()",
