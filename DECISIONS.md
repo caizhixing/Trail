@@ -5,6 +5,9 @@
 ### 2026-11-05 模型选型（阶段 0 门）
 主 agent = GLM glm-5.3（当前会话）；worker = 跟随会话模型（GLM glm-5.3）；reviewer = `new-provider/k3$max`（k3 家族，与 worker 不同家族 ✓）。由用户在阶段 0 选型门选定，依据 multi-agent-pr-flow skill。
 
+### 2026-11-05 reviewer 模型变更（k3$max → deepseek-v4-pro 裸 ID）
+阶段 0 选定的 `new-provider/k3$max` 与 `new-provider/k3` 在本 harness 的 workflow 子代理路径实测静默失败（对照组会话模型正常；`new-provider/` 前缀路径整体不可用）。用户改指定 `deepseek-v4-pro`；裸 ID（不带 provider 覆盖）冒烟实测可用。skill 记录的「deepseek-v4-pro 思考模式不可作子代理」限制针对 `new-provider/` 前缀路径，裸 ID 路径实测不受影响。家族 DeepSeek ≠ GLM（worker）✓ 仍合规。
+
 ### 2026-11-05 仓库可见性
 用户拍板**保持 PUBLIC**（skill 红线 19 建议私有，风险已知悉：PRD / issue / PR 内容将公开）。内容红线照旧：一切产出禁止携带用户数据。
 
