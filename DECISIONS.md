@@ -1,0 +1,55 @@
+# DECISIONS.md（按业务问题索引；主 agent 单写者维护）
+
+## 流程与模型
+
+### 2026-11-05 模型选型（阶段 0 门）
+主 agent = GLM glm-5.3（当前会话）；worker = 跟随会话模型（GLM glm-5.3）；reviewer = `new-provider/k3$max`（k3 家族，与 worker 不同家族 ✓）。由用户在阶段 0 选型门选定，依据 multi-agent-pr-flow skill。
+
+### 2026-11-05 仓库可见性
+用户拍板**保持 PUBLIC**（skill 红线 19 建议私有，风险已知悉：PRD / issue / PR 内容将公开）。内容红线照旧：一切产出禁止携带用户数据。
+
+### 2026-11-05 红线豁免登记
+红线 15（git 操作）与红线 16（ADB / 模拟器 / UI 自动化，仅限本仓库 sample-app 包 `io.github.caizhixing.trail.sample*`）在 multi-agent-pr-flow skill 执行期放开。来源：skill 阶段 0（用户 2026-10-30 授权），范围仅本项目。
+
+## 工具链与离线
+
+### 2026-11-05 离线工具链定型（已实机全变体验证）
+Gradle 9.8.2 + AGP 9.5.0（内置 Kotlin 2.2.10）+ Compose 1.12.1 / material3 1.5.0-beta02 + compileSdk 37 / minSdk 26 / JBR 25。三个非常规手段：
+1. `settings.gradle.kts` 用 `useModule` 直映射插件工件（`com.android.library` 等 plugin marker 未缓存）。
+2. 根 buildscript `force kotlin-reflect:2.2.10`（AGP 传递依赖要 2.4.10，未缓存）。
+3. `subprojects` `force kotlin-stdlib:2.2.10`（传递默认 2.2.20，未缓存）。
+
+被否备选：Kotlin 2.4.x 组合（marker / reflect 断链）、compose BOM 2025.10.00（映射到未缓存的 1.9.3 线）、compileSdk 36（compose 1.12 AAR metadata 要求 37）。
+
+## 架构（工作流 PRD §2 的定型记录）
+
+### 2026-11-05 Trail / TrailGate 放 impl 工件（纯 Chuck 模式），trail-api 只放模型
+产品 PRD §5.3 字面为「api 含常量门声明」，但验收 A-②「dex 无 trail-* 包名类」要求 Trail 门面与门常量在生产 dex 可消失 → 只有同 FQN 双工件（debug / noop 各自持有 inline event + TrailGate）才能既做调用点内联消除又让类本身被 R8 删除。api 只放纯数据契约（生产无引用即被 shrink）。被否备选：「api 持 inline fun + compileOnly 桩」——桩 const 值会被烘进第三方编译产物（见 spi 决策）。
+
+### 2026-11-05 trail-spi 内部桩工件（不发布）
+trail-okhttp 需要编译期引用 Trail 又不能钉死变体 → spi 提供非 inline 桩（Trail / TrailGate），okhttp `compileOnly` 之，运行期由 app 类路径上的 debug / noop 真类解析（Kotlin inline fun 也会编译出真实方法，虚拟分派正确命中）。桩函数必须非 inline（防桩常量烘入）。禁止任何发布工件依赖 spi。
+
+### 2026-11-05 withTrace 为非 inline suspend 壳
+`suspend` + `inline` 组合被语言禁止；withTrace 必须 wrap 业务块，无法用常量门 guard 消除。生产足迹 = `trail.Trail` 壳类（纯 `block()` 委托，零字符串、零逻辑），预期 R8 平凡内联后整类消除——由 issue #2 实证；若 R8 不消，验收 A-② 降级为「壳类豁免」并升级用户拍板。
+
+### 2026-11-05 JSONL 手写编码器（不引 kotlinx.serialization）
+保持 trail-api / trail-debug 依赖面最小（api 零第三方依赖）；JSON 转义为纯函数，100% 行覆盖测试锁定。被否备选：kotlinx.serialization（给 api 引入编译器插件与运行时依赖）。
+
+### 2026-11-05 Maven 坐标（产品 PRD Q1 结项）
+group `io.github.caizhixing.trail`；工件 `trail-api` / `trail-debug` / `trail-noop` / `trail-okhttp`。
+
+### 2026-11-05 测试栈 JUnit4 + runBlocking
+`kotlinx-coroutines-test` / `kotlin-test-junit` 未缓存。推论：ViewModel 构造注入 `CoroutineDispatcher`（默认 `Dispatchers.Main.immediate`，测试传 `Unconfined`），配自建 Closeable scope，规避 JVM 单测无 Main dispatcher。
+
+## 产品行为（PRD 外决策，交付时逐条供用户确认）
+
+| # | 决策 | 理由 |
+|---|---|---|
+| P-1 | 查看器「简洁视图记忆」用 SharedPreferences | debug 工具轻量优先，避免 DataStore 依赖 |
+| P-2 | 查看器数据源 = 内存环形 ∪ 文件分页（首屏内存，上滑加载历史文件页） | PRD F5 时间范围过滤需要历史数据 |
+| P-3 | echo 默认关；sample 的 internalDebug 显式开 | Q2 提案转正 |
+| P-4 | 内置脱敏 key 初始清单：token / password / secret / authorization / cookie / set-cookie / api_key / phone（大小写不敏感，命中即 `***`） | F8 默认清单落定 |
+| P-5 | okhttp 事件名：http_request / http_response / http_error；trace 归因走 Request tag（`Request.Builder.trailTraced()` 在调用点捕获 currentTraceId） | F3 桥接方式落定 |
+| P-6 | attrs 值截断上限 512 字符；网络 body 截断默认 4KB/侧 | §9.3 / F3 默认值落定 |
+| P-7 | traceId 格式 `t_` + 16 hex；tid = 线程名 | 可读性与唯一性折中 |
+| P-8 | dumpRecent 空 / 未初始化时返回空字符串而非异常 | F7 容错语义 |
