@@ -8,6 +8,9 @@
 ### 2026-11-05 reviewer 模型变更（k3$max → deepseek-v4-pro 裸 ID）
 阶段 0 选定的 `new-provider/k3$max` 与 `new-provider/k3` 在本 harness 的 workflow 子代理路径实测静默失败（对照组会话模型正常；`new-provider/` 前缀路径整体不可用）。用户改指定 `deepseek-v4-pro`；裸 ID（不带 provider 覆盖）冒烟实测可用。skill 记录的「deepseek-v4-pro 思考模式不可作子代理」限制针对 `new-provider/` 前缀路径，裸 ID 路径实测不受影响。家族 DeepSeek ≠ GLM（worker）✓ 仍合规。
 
+### 2026-11-05 PR #13 合并竞态事故与流程修正
+网络抖动导致 rebase 后的 push 失败，但同一命令块内的 `gh pr merge` 仍执行——PR #13 在 eb1efaa（未含 rebase 修复）状态被合并，main 短暂红（TrailExplicitTraceIdTest 引用 #3 已移除的 recentEvents）。补救：PR #15 单提交迁移修复，合并后全量集成绿（d9fedb7）。**流程修正（主 agent 自律）**：任何 push 失败后禁止同块继续 merge 命令；push 与 merge 必须分开校验（push ok 才 merge）。另：PR 分支若 rebase 过，不得用于「补丁 PR」复用（merge-base 判定混乱致 PR #14 冲突），补丁一律从当前 main 新建分支。
+
 ### 2026-11-05 离线缓存补齐：okhttp-jvm-5.5.1.jar（issue #7 env 解封）
 bootstrap 验证盲区：只验证过 `:trail-okhttp:compileKotlin`（主源集不触碰 typealias），未跑 test。okhttp 5.x KMP 根包 JVM 变体重定向到 `okhttp-jvm:5.5.1`，其 jar 未缓存（缓存里只有 android AAR 与 4.12.0 旧 jar）。以临时工程（java 插件 + mavenCentral）一次性拉取入库（连带 okio-jvm-3.18.1、kotlin-stdlib-2.2.21 传递缓存；仓库内 stdlib 仍 force 2.2.10 不受影响）。**注意**：全局 `~/.gradle/gradle.properties` 配了死代理 127.0.0.1:7897，任何需要联网的 provisioning 调用须加 `-Dhttp.nonProxyHosts=*` 绕过。**KMP typealias 陷阱**：`okhttp3.Proxy`/`ProxySelector`/`HostnameVerifier` 在 JVM 工件中无 class（actual typealias 擦除为 JDK 类型），纯 JVM 模块源码必须 import JDK 原型（`java.net.Proxy` 等）。
 
