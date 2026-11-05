@@ -18,7 +18,7 @@ class TrailExplicitTraceIdTest {
 
     @Before
     fun resetCollector() {
-        TrailImpl.recentEvents.clear()
+        TrailImpl.resetForTest()
     }
 
     @Test
@@ -32,7 +32,7 @@ class TrailExplicitTraceIdTest {
             mapOf("method" to "GET"),
         )
 
-        val event = TrailImpl.recentEvents.snapshot().single()
+        val event = TrailImpl.debugEvents().single()
         assertEquals("t_0123456789abcdef", event.traceId)
         assertEquals("network", event.tag)
         assertEquals("trail_test_explicit_trace", event.name)
@@ -45,7 +45,7 @@ class TrailExplicitTraceIdTest {
     fun explicitTraceIdOverloadRecordsNullTraceIdWhenGivenNull() {
         Trail.event("network", "trail_test_explicit_trace_null", null, Audience.AI, Level.WARN, emptyMap())
 
-        val event = TrailImpl.recentEvents.snapshot().single()
+        val event = TrailImpl.debugEvents().single()
         assertNull(event.traceId)
         assertEquals(Level.WARN, event.level)
         assertEquals(emptyMap<String, String>(), event.attrs)
