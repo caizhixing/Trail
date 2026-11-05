@@ -1,5 +1,7 @@
 package io.github.caizhixing.trail.debug.viewer
 
+import io.github.caizhixing.trail.debug.export.ExportSharePayload
+import io.github.caizhixing.trail.debug.export.ResultState
 import io.github.caizhixing.trail.model.LogEvent
 
 /**
@@ -22,5 +24,12 @@ internal sealed interface ViewerUiState {
         val endReached: Boolean,
         /** Non-null while the detail pane is open (full attrs, no truncation). */
         val selected: LogEvent?,
+        /**
+         * Latest export action (issue #6): null until the first export is
+         * requested, Loading while the file is written, Success with the share
+         * payload for the screen to launch the system share sheet, Error with
+         * a message on failure.
+         */
+        val export: ResultState<ExportSharePayload>? = null,
     ) : ViewerUiState
 }

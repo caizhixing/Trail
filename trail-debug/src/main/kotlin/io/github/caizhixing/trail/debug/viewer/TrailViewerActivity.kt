@@ -2,6 +2,7 @@ package io.github.caizhixing.trail.debug.viewer
 
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -10,7 +11,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.caizhixing.trail.TrailImpl
+import io.github.caizhixing.trail.debug.export.AndroidExportSharer
+import io.github.caizhixing.trail.debug.export.SnapshotTrailEventExporter
 import kotlinx.coroutines.Dispatchers
+import java.io.File
 
 /**
  * In-app event viewer entry (behavior 5.9). Declared `exported="false"` in
@@ -27,7 +31,10 @@ class TrailViewerActivity : ComponentActivity() {
                 val viewerViewModel: ViewerViewModel = viewModel(
                     factory = viewerFactory(preferences),
                 )
-                TrailViewerScreen(viewModel = viewerViewModel)
+                TrailViewerScreen(
+                    viewModel = viewerViewModel,
+                    shareLauncher = { payload -> AndroidExportSharer.launch(this, payload) },
+                )
             }
         }
     }
@@ -40,15 +47,31 @@ class TrailViewerActivity : ComponentActivity() {
                     repository = repository,
                     preferences = preferences,
                     dispatcher = Dispatchers.Main.immediate,
+                    exporter = SnapshotTrailEventExporter(
+                        store = TrailImpl.snapshotStore(),
+                        exportsDir = File(cacheDir, EXPORTS_DIR_NAME),
+                        appProvider = { packageName },
+                        versionProvider = { resolveVersionName() },
+                        deviceProvider = { Build.MODEL },
+                    ),
                 )
                 @Suppress("UNCHECKED_CAST")
                 return viewModel as T
             }
         }
 
+    private fun resolveVersionName(): String? =
+        try {
+            packageManager.getPackageInfo(packageName, 0).versionName
+        } catch (_: Exception) {
+            null
+        }
+
     companion object {
 
         /** Explicit-intent factory; the viewer is never addressable implicitly. */
         fun intent(context: Context): Intent = Intent(context, TrailViewerActivity::class.java)
+
+        private const val EXPORTS_DIR_NAME = "trail_exports"
     }
 }
