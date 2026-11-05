@@ -49,6 +49,26 @@ object Trail {
         }
     }
 
+    /**
+     * Explicit traceId entry (PRD §2.3, contract revision A / issue #7 ruling):
+     * the given traceId overrides the ambient context lookup so non-coroutine
+     * callers (okhttp interceptor on an OkHttp thread) can attribute the event
+     * to the trace captured at the request call site; null records null.
+     */
+    @JvmStatic
+    fun event(
+        tag: String,
+        name: String,
+        traceId: String?,
+        audience: Audience,
+        level: Level,
+        attrs: Map<String, String>,
+    ) {
+        if (TrailGate.ENABLED) {
+            TrailImpl.event(TrailImpl.buildEvent(tag, name, traceId, audience, level, attrs))
+        }
+    }
+
     @JvmStatic
     fun flow(tag: String, name: String, attrs: Map<String, String>) {
         if (TrailGate.ENABLED) {

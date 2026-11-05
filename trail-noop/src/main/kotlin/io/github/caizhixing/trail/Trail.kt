@@ -77,6 +77,22 @@ object Trail {
     fun event(tag: String, name: String, audience: Audience, level: Level, attrs: Map<String, String>) {
     }
 
+    /**
+     * Explicit traceId entry (PRD §2.3, contract revision A / issue #7 ruling):
+     * signature parity with trail-debug; noop records nothing and never reads
+     * attrs.
+     */
+    @JvmStatic
+    fun event(
+        tag: String,
+        name: String,
+        traceId: String?,
+        audience: Audience,
+        level: Level,
+        attrs: Map<String, String>,
+    ) {
+    }
+
     @JvmStatic
     fun flow(tag: String, name: String, attrs: Map<String, String>) {
     }
