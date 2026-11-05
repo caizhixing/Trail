@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- D-6: declared only; the host app owns requesting POST_NOTIFICATIONS. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application>
+
+        <!-- Viewer entry (behavior 5.6/5.9): reachable only via explicit intents. -->
+        <activity
+            android:name="io.github.caizhixing.trail.debug.viewer.TrailViewerActivity"
+            android:exported="false" />
+    </application>
+
+</manifest>
