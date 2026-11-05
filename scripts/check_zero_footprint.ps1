@@ -26,7 +26,14 @@
            5a. mapping.txt must NOT map any io.github.caizhixing.trail.<library
                class> (sample namespace excluded) to a live name — every
                library class entry must carry the R8$$REMOVED$$CLASS marker.
-           5b. usage.txt must list those same library classes as removed.
+           5b. usage.txt must list every entry of a HARDCODED library class
+               list as removed. The list enumerates the library's actual
+               class surface: the 8 classes of the production artifacts
+               (trail-noop Trail/TrailGate/TrailImpl + the 5 trail-api
+               model.* classes), each asserted by name, plus every
+               trail-debug-only top-level class, asserted entirely ABSENT
+               (debug classes are not on the production classpath — check 1 —
+               so not even a removal record may exist for them).
 
      Why check 5 exists: with minification on, the dex namespace-string scan
      has a blind spot — R8 renames kept classes to arbitrary short names, so
@@ -196,7 +203,11 @@ if ($null -ne $productionApk) {
 #   5a. mapping.txt: every io.github.caizhixing.trail.<library class> entry
 #       (sample namespace excluded) must map to R8$$REMOVED$$CLASS; a library
 #       class kept under any live (original or renamed) name is a FAIL.
-#   5b. usage.txt: those same library classes must be listed as removed.
+#   5b. usage.txt: a HARDCODED library class list drives per-class asserts.
+#       The list is enumerated from the actual sources of the library's
+#       public/internal surface (see $productionLibraryClasses /
+#       $debugOnlyClasses below), NOT from whatever mapping.txt happens to
+#       contain.
 # With minification on, the dex string scan above has a blind spot (R8 renames
 # kept classes, so no library namespace string survives even if code does);
 # mapping.txt/usage.txt are R8's own removal records and prove class-level
@@ -242,19 +253,117 @@ if (-not (Test-Path -LiteralPath $mappingPath)) {
         Write-Pass ('mapping.txt: all ' + $libraryClasses.Count + ' trail library class entries map to R8$$REMOVED$$CLASS')
     }
 
-    if ($libraryClasses.Count -gt 0) {
-        $removedSet = New-Object 'System.Collections.Generic.HashSet[string]'
-        foreach ($line in (Get-Content -LiteralPath $usagePath)) {
-            $entry = $line.Trim()
-            if ($entry.EndsWith(':')) { $entry = $entry.Substring(0, $entry.Length - 1) }
-            if ($entry.Length -gt 0) { $removedSet.Add($entry) | Out-Null }
-        }
-        $missing = @($libraryClasses | Where-Object { -not $removedSet.Contains($_) })
-        if ($missing.Count -gt 0) {
-            Write-Fail ('usage.txt does not list these trail library classes as removed: ' + ($missing -join ', '))
-        } else {
-            Write-Pass ('usage.txt: all ' + $libraryClasses.Count + ' trail library classes listed as removed (obfuscation-independent hard evidence)')
-        }
+    # --- Check 5b: hardcoded library class list, asserted per class --------
+    # $productionLibraryClasses = every class of the artifacts that ARE on the
+    # productionRelease runtime classpath (trail-noop + trail-api; trail-noop
+    # shares the FQNs of trail-debug's Trail/TrailGate/TrailImpl by design).
+    # Each must appear in usage.txt as a CLASS-level removal record: R8 writes
+    # removed classes as top-level lines with NO trailing ':' — a "Class:"
+    # header introduces indented member-level removal records for a class R8
+    # KEPT (live or renamed) and must NOT count as a class removal.
+    $productionLibraryClasses = @(
+        'io.github.caizhixing.trail.Trail',                # trail-noop (same FQN as trail-debug)
+        'io.github.caizhixing.trail.TrailGate',            # trail-noop (same FQN as trail-debug)
+        'io.github.caizhixing.trail.TrailImpl',            # trail-noop (same FQN as trail-debug)
+        'io.github.caizhixing.trail.model.LogEvent',       # trail-api
+        'io.github.caizhixing.trail.model.Audience',       # trail-api
+        'io.github.caizhixing.trail.model.Level',          # trail-api
+        'io.github.caizhixing.trail.model.TrailSchema',    # trail-api
+        'io.github.caizhixing.trail.model.TrailConfig'     # trail-api
+    )
+
+    # $debugOnlyClasses = every top-level class of the trail-debug artifact
+    # (engine / export / trace / viewer, including *Kt file classes for
+    # top-level-declaration-only files), enumerated from the sources.
+    # EXEMPTION from the "listed as removed" assert, by design: debug classes
+    # never enter the production build inputs (check 1 excludes trail-debug
+    # from productionReleaseRuntimeClasspath), so usage.txt legitimately has
+    # no removal record for them and that assert could never hold. Instead
+    # each is asserted ABSENT from usage.txt entirely — any hit means
+    # trail-debug leaked into the production build. Nested ($-shaped), lambda
+    # and synthesized classes are covered by the debug-namespace prefix guard
+    # below, so the list only names top-level declared/file classes.
+    $debugOnlyClasses = @(
+        # --- debug.engine ---
+        'io.github.caizhixing.trail.debug.engine.AndroidBridges',
+        'io.github.caizhixing.trail.debug.engine.AttrSanitizer',
+        'io.github.caizhixing.trail.debug.engine.CaptureEngine',
+        'io.github.caizhixing.trail.debug.engine.EngineLogger',
+        'io.github.caizhixing.trail.debug.engine.ExportMeta',
+        'io.github.caizhixing.trail.debug.engine.JsonlDecoder',
+        'io.github.caizhixing.trail.debug.engine.JsonlEncoder',
+        'io.github.caizhixing.trail.debug.engine.JsonlFileStore',
+        'io.github.caizhixing.trail.debug.engine.MaskingPolicy',
+        'io.github.caizhixing.trail.debug.engine.OnceWarner',
+        'io.github.caizhixing.trail.debug.engine.RingBuffer',
+        'io.github.caizhixing.trail.debug.engine.TrailSnapshotStore',
+        # --- debug.export ---
+        'io.github.caizhixing.trail.debug.export.AndroidExportSharer',
+        'io.github.caizhixing.trail.debug.export.ExportFileNamePolicy',
+        'io.github.caizhixing.trail.debug.export.ExportScope',
+        'io.github.caizhixing.trail.debug.export.ExportSharePayload',
+        'io.github.caizhixing.trail.debug.export.ResultState',
+        'io.github.caizhixing.trail.debug.export.SnapshotTrailEventExporter',
+        'io.github.caizhixing.trail.debug.export.TrailEventExporter',
+        # --- debug.trace ---
+        'io.github.caizhixing.trail.debug.trace.TraceBridge',
+        'io.github.caizhixing.trail.debug.trace.TraceContext',
+        'io.github.caizhixing.trail.debug.trace.TraceIds',
+        # --- debug.viewer ---
+        'io.github.caizhixing.trail.debug.viewer.AndroidViewerNotifier',
+        'io.github.caizhixing.trail.debug.viewer.ConciseViewPolicy',
+        'io.github.caizhixing.trail.debug.viewer.TimeRange',
+        'io.github.caizhixing.trail.debug.viewer.EventFilter',
+        'io.github.caizhixing.trail.debug.viewer.TrailViewerActivity',
+        'io.github.caizhixing.trail.debug.viewer.ViewerPaging',
+        'io.github.caizhixing.trail.debug.viewer.ViewerPreferences',
+        'io.github.caizhixing.trail.debug.viewer.SharedPreferencesViewerPreferences',
+        'io.github.caizhixing.trail.debug.viewer.ViewerRepository',
+        'io.github.caizhixing.trail.debug.viewer.SnapshotViewerRepository',
+        'io.github.caizhixing.trail.debug.viewer.ViewerUiState',
+        'io.github.caizhixing.trail.debug.viewer.ViewerViewModel',
+        'io.github.caizhixing.trail.debug.viewer.ViewerNotifier',
+        # file classes of top-level-declaration-only files
+        'io.github.caizhixing.trail.debug.viewer.TrailViewerScreenKt',
+        'io.github.caizhixing.trail.debug.viewer.ViewerDetailContentKt',
+        'io.github.caizhixing.trail.debug.viewer.ViewerListContentKt',
+        'io.github.caizhixing.trail.debug.viewer.ViewerNotifierKt'
+    )
+
+    $usageLines = @(Get-Content -LiteralPath $usagePath)
+    $usageText = Get-Content -LiteralPath $usagePath -Raw
+
+    # Class-level removals only: top-level lines that do not end with ':'.
+    $removedClassSet = New-Object 'System.Collections.Generic.HashSet[string]'
+    foreach ($line in $usageLines) {
+        if ($line.Length -eq 0) { continue }
+        if ($line.StartsWith(' ') -or $line.StartsWith("`t")) { continue }
+        if ($line.EndsWith(':')) { continue }
+        $removedClassSet.Add($line.Trim()) | Out-Null
+    }
+
+    $missing = @($productionLibraryClasses | Where-Object { -not $removedClassSet.Contains($_) })
+    if ($missing.Count -gt 0) {
+        Write-Fail ('usage.txt does not list these production library classes as removed: ' + ($missing -join ', '))
+    } else {
+        Write-Pass ('usage.txt: all ' + $productionLibraryClasses.Count + ' hardcoded production library classes (Trail/TrailGate/TrailImpl + 5 model classes) listed as removed')
+    }
+
+    # Per-class ABSENT asserts for the trail-debug-only surface, plus a
+    # namespace-prefix guard as the safety net for anything not nameable as
+    # a top-level class (nested/lambda/synthesized classes).
+    $leaked = @($debugOnlyClasses | Where-Object { $usageText.Contains($_) })
+    if ($leaked.Count -gt 0) {
+        Write-Fail ('usage.txt mentions trail-debug-only classes (trail-debug leaked into the production build): ' + ($leaked -join ', '))
+    } else {
+        Write-Pass ('usage.txt: none of the ' + $debugOnlyClasses.Count + ' trail-debug-only classes present (not on the production classpath; per-class exemption documented above)')
+    }
+
+    $prefixHits = @($usageLines | Where-Object { $_.Contains('io.github.caizhixing.trail.debug.') })
+    if ($prefixHits.Count -gt 0) {
+        Write-Fail ('usage.txt contains io.github.caizhixing.trail.debug.* entries (trail-debug leaked into the production build): ' + (($prefixHits | ForEach-Object { $_.Trim() }) -join '; '))
+    } else {
+        Write-Pass 'usage.txt contains no io.github.caizhixing.trail.debug.* entry of any kind (nested/lambda/file classes included)'
     }
 }
 

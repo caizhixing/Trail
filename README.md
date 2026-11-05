@@ -126,7 +126,7 @@ if (TrailGate.ENABLED) {
 | `internalDebug` | 开发自用 | `trail-debug` | 关 |
 | `internalRelease` | **测试日常** | `trail-debug` | **开（minified QA）** |
 | `productionRelease` | 线上发布 | `trail-noop`（纯空实现） | 开 |
-| `productionDebug` | 本 sample 不生成；宿主若存在，挂 noop 无害 | — | — |
+| `productionDebug` | 可构建（`assembleProductionDebug` 存在）；R8 关闭且无采集意义，宿主接入时建议用 variant filtering 排除（PRD §5.1 的前提） | `trail-noop` | 关 |
 
 生产变体的目标不是「空方法但仍执行参数求值」，而是通过 `const val` 编译期门、Kotlin `inline`、lambda 惰性求值和 R8 删除调用点及其事件字符串。Java 调用点则必须遵守上面的 guard 约定，并依赖 R8 完成死分支清理。
 
@@ -184,7 +184,7 @@ Trail 是本地诊断日志机制，不是埋点或日志上报系统。禁止�
 2. productionRelease APK 的 dex 不包含 Trail 库包名串和 `trail_sample_` 事件名特征串；
 3. `internalReleaseRuntimeClasspath` 反向包含 `trail-debug`；
 4. internalRelease APK 反向保留 Trail 库串与特征串，证明扫描本身有效（非假阴性）；
-5. productionRelease `mapping.txt` 中任何 `io.github.caizhixing.trail.<库类>`（sample 自身命名空间除外）必须带 `R8$$REMOVED$$CLASS` 删除标记，且 `usage.txt` 将这些 trail 库类列为已删——**混淆无关的零足迹硬证据**。
+5. productionRelease `mapping.txt` 中任何 `io.github.caizhixing.trail.<库类>`（sample 自身命名空间除外）必须带 `R8$$REMOVED$$CLASS` 删除标记，且 `usage.txt` 按硬编码库类清单逐类断言（8 个 production 工件类列为已删；trail-debug 独有类完全缺席）——**混淆无关的零足迹硬证据**。
 
 关于第 5 项的必要性：混淆开启时，dex 命名空间串扫描存在盲区——R8 会把保留的类改名成任意短名，dex 中不再出现库包名字面串，「扫不出串」不能单独证明「类被删除」。因此类级删除证据取自 R8 自己的 `mapping.txt` / `usage.txt`（与混淆改名无关）；特征串（`trail_sample_`）则证明播种的事件名字面量没有进 production dex。两组证据合起来构成零足迹验收（产品 PRD 验收 A）。
 

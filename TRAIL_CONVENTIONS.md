@@ -39,7 +39,7 @@
 产品 PRD §9 三条全文纳入，任何播种与自动采集通道不得越过：
 
 1. **禁止记录**：用户文件路径 / 内容、剪贴板、联系人、通知内容、安装列表等个人内容（launcher 场景尤需注意）。
-2. **一切自动采集通道过 F8 统一脱敏**（内置敏感 key：token / password / secret / authorization / cookie / set-cookie / api_key / phone——大小写不敏感、命中即 `***`；宿主可注册额外精确 key / 正则规则）。
+2. **一切自动采集通道过 F8 统一脱敏**（v1 仅内置 P-4 敏感 key 清单：token / password / secret / authorization / cookie / set-cookie / api_key / phone——大小写不敏感、命中即 `***`；v1 无公共注册入口，宿主自定义精确 key / 正则规则属 V2 规划、**未实现**）。
 3. **attrs 值默认截断上限**（512 字符，`TrailConfig.attrValueMaxLength`），防误灌大对象。
 
 播种自查（review 清单）：
@@ -146,7 +146,7 @@ public static void onCallbackInvoked(String source) {
 
 ## 附录 A. withTrace 语义边界（v1，宿主必读）
 
-`withTrace` 是**非 inline suspend 壳**（DECISIONS.md「withTrace 为非 inline suspend 壳」）：`suspend + inline` 被语言禁止，无法享受常量门消除，生产足迹由 R8 平凡内联后整类删除（实证见 DECISIONS.md D-1 结项）。使用时注意三条 v1 语义边界：
+`withTrace` 是**非 inline suspend 壳**（DECISIONS.md「withTrace 为非 inline suspend 壳」）：`inline suspend` 函数若要用 `withContext` 安装上下文并执行调用方块，块必须 `crossinline`，而 `crossinline` 禁止块内挂起调用——等价不可用，故享受不到常量门消除，生产足迹由 R8 平凡内联后整类删除（实证见 DECISIONS.md D-1 结项）。使用时注意三条 v1 语义边界：
 
 1. **裸 launch / async 逃逸**：traceId 经 `CoroutineContext.Element` + 结构化并发传播。块内从**块外 scope**（捕获的 `viewModelScope`、自建 scope 等）派生的 `launch` / `async` **不继承** withTrace 注入的上下文，其中事件 traceId = null。宿主须在块内用 `coroutineScope { }`（或 `withContext`）结构化创建子协程，让子协程从块内上下文派生。块内的 Flow 操作符链、嵌套 `withContext`、块内 scope 派生均正常继承（协程上下文按 key 合并）。
 2. **协程边界异常实例可能被复制**：块内抛出的异常跨越协程边界向外传播时，kotlinx-coroutines 可能复制异常实例（栈恢复 / 去重报告机制）；**类型、message、cause 语义不变**。宿主 catch 处不得依赖异常**同一性**（`e === original`）判断，按类型与语义处理即可。
@@ -159,6 +159,6 @@ public static void onCallbackInvoked(String source) {
 - 混淆开启时，「dex 库命名空间串扫描」存在**盲区**：R8 会把保留的类改名成任意短名（如 `l`），dex 中不再出现 `io/github/caizhixing/trail` 字面串——**扫不出串 ≠ 没有库代码**。命名空间扫描只能证明「串不存在」，不能单独证明「类被删除」。
 - **混淆无关的硬证据**（`scripts/check_zero_footprint.ps1` Check 5，产物目录 `sample-app/build/outputs/mapping/productionRelease/`）：
   1. `mapping.txt`：任何 `io.github.caizhixing.trail.<库类>`（排除 sample 自身命名空间）的映射行，目标必须含 `R8$$REMOVED$$CLASS` 标记；出现库类映射**不带**该标记（即类被保留/改名存留）= **FAIL**。
-  2. `usage.txt`：R8 自己记录的已删类清单；**全部 trail 库类应列为已删**。该记录与混淆改名无关，是「类真的没了」的硬证据。
+  2. `usage.txt`：R8 自己记录的已删类清单。Check 5b 以**硬编码的库类清单**（枚举自库源码实际类面）逐类断言：production 工件类——`Trail` / `TrailGate` / `TrailImpl` + `model.LogEvent` / `model.Audience` / `model.Level` / `model.TrailSchema` / `model.TrailConfig` 共 8 类——逐类断言列为已删；trail-debug 独有类（engine / export / trace / viewer 全部顶层类，含 `*Kt` 文件类）不在 production classpath（Check 1 已排除 trail-debug），断言 `usage.txt` **完全不含**其条目（另设 `debug.` 命名空间前缀兜底覆盖嵌套 / lambda / 合成类）。该记录与混淆改名无关，是「类真的没了」的硬证据。
 - 特征串（`trail_sample_` 前缀）仍是必要证据：它证明播种的**事件名字符串**没有进 production dex——Java 播种的事件名同以该前缀纳入扫描覆盖。
 - review 口诀：**特征串证明「字面量没进 dex」，mapping / usage 证明「类真的被删了」**——两组证据合起来才构成零足迹验收（产品 PRD 验收 A）。
