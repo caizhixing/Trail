@@ -94,15 +94,18 @@ public class TrailInterceptor(
 
     /**
      * Response body only (request bodies are not part of the §2.6 contract).
-     * peekBody reads without consuming the streamed body. Opt-out and peek
-     * failures omit the attr entirely; non-textual bodies record <omitted>.
+     * peekBody reads without consuming the streamed body. Opt-out, empty
+     * content and peek failures omit the attr entirely; non-textual bodies
+     * record <omitted>. okhttp 5.x models bodiless responses (204/304) as a
+     * non-null EMPTY body, so emptiness is judged on peeked content.
      */
     private fun bodyAttr(response: Response): String? {
         if (!config.recordBodies) return null
         val body = response.body ?: return null
         if (!isTextual(body.contentType())) return OMITTED_BODY
         return try {
-            response.peekBody(config.maxBodyBytes.toLong()).string()
+            val text = response.peekBody(config.maxBodyBytes.toLong()).string()
+            if (text.isEmpty()) null else text
         } catch (e: IOException) {
             OMITTED_BODY
         }
