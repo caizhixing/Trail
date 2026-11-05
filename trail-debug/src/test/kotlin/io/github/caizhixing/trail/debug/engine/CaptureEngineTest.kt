@@ -95,18 +95,80 @@ class CaptureEngineTest {
     fun dumpRecentSlicesTheRingAscending() {
         val engine = newEngine(TrailConfig(ringCapacity = 3))
 
-        for (index in 1..5) {
-            engine.submit(eventOf("trail_test_$index"))
-        }
+        // Arrival order is deliberately inverted against ts; the ring keeps
+        // the last three arrivals (ts 3000 / 2000 / 1000) in arrival order.
+        engine.submit(eventOf("trail_test_1", ts = 5_000L))
+        engine.submit(eventOf("trail_test_2", ts = 4_000L))
+        engine.submit(eventOf("trail_test_3", ts = 3_000L))
+        engine.submit(eventOf("trail_test_4", ts = 2_000L))
+        engine.submit(eventOf("trail_test_5", ts = 1_000L))
 
-        val expectedLastTwo = engine.memoryEvents().drop(1).joinToString("\n") { JsonlEncoder.encodeEvent(it) }
-        val expectedAll = engine.memoryEvents().joinToString("\n") { JsonlEncoder.encodeEvent(it) }
-
-        assertEquals(expectedLastTwo, engine.dumpRecent(2))
-        assertEquals(expectedAll, engine.dumpRecent(10))
-        assertEquals(3, engine.dumpRecent(10).lines().size)
+        // Expected values are hardcoded literals (review r1: deriving them
+        // from memoryEvents() made the ts-order assertion vacuous).
+        assertEquals(
+            "{\"ts\":1000,\"traceId\":null,\"tag\":\"widget\",\"name\":\"trail_test_5\"," +
+                "\"audience\":\"AI\",\"level\":\"INFO\",\"attrs\":{},\"tid\":null}\n" +
+                "{\"ts\":2000,\"traceId\":null,\"tag\":\"widget\",\"name\":\"trail_test_4\"," +
+                "\"audience\":\"AI\",\"level\":\"INFO\",\"attrs\":{},\"tid\":null}",
+            engine.dumpRecent(2),
+        )
+        assertEquals(
+            "{\"ts\":1000,\"traceId\":null,\"tag\":\"widget\",\"name\":\"trail_test_5\"," +
+                "\"audience\":\"AI\",\"level\":\"INFO\",\"attrs\":{},\"tid\":null}\n" +
+                "{\"ts\":2000,\"traceId\":null,\"tag\":\"widget\",\"name\":\"trail_test_4\"," +
+                "\"audience\":\"AI\",\"level\":\"INFO\",\"attrs\":{},\"tid\":null}\n" +
+                "{\"ts\":3000,\"traceId\":null,\"tag\":\"widget\",\"name\":\"trail_test_3\"," +
+                "\"audience\":\"AI\",\"level\":\"INFO\",\"attrs\":{},\"tid\":null}",
+            engine.dumpRecent(10),
+        )
         assertEquals("", engine.dumpRecent(0))
         assertEquals("", engine.dumpRecent(-3))
+        engine.shutdown()
+    }
+
+    @Test
+    fun dumpRecentSortsOutOfOrderArrivalsByTs() {
+        val engine = newEngine(TrailConfig(ringCapacity = 8))
+
+        engine.submit(eventOf("trail_test_late", ts = 2_000L))
+        engine.submit(eventOf("trail_test_early", ts = 1_000L))
+        engine.submit(eventOf("trail_test_latest", ts = 3_000L))
+
+        assertEquals(
+            listOf("trail_test_early", "trail_test_late", "trail_test_latest"),
+            engine.dumpRecent(10).lines().map { line ->
+                Regex("\"name\":\"([^\"]+)\"").find(line)?.groupValues?.get(1)
+            },
+        )
+        engine.shutdown()
+    }
+
+    @Test
+    fun dumpRecentKeepsArrivalOrderForEqualTimestamps() {
+        val engine = newEngine(TrailConfig(ringCapacity = 8))
+
+        engine.submit(eventOf("trail_test_first_at_2000", ts = 2_000L))
+        engine.submit(eventOf("trail_test_only_at_1000", ts = 1_000L))
+        engine.submit(eventOf("trail_test_last_at_3000", ts = 3_000L))
+        engine.submit(eventOf("trail_test_second_at_2000", ts = 2_000L))
+
+        assertEquals(
+            listOf(1_000L, 2_000L, 2_000L, 3_000L),
+            engine.dumpRecent(10).lines().map { line ->
+                Regex("\"ts\":(-?\\d+)").find(line)?.groupValues?.get(1)?.toLong()
+            },
+        )
+        assertEquals(
+            listOf(
+                "trail_test_only_at_1000",
+                "trail_test_first_at_2000",
+                "trail_test_second_at_2000",
+                "trail_test_last_at_3000",
+            ),
+            engine.dumpRecent(10).lines().map { line ->
+                Regex("\"name\":\"([^\"]+)\"").find(line)?.groupValues?.get(1)
+            },
+        )
         engine.shutdown()
     }
 
@@ -173,7 +235,7 @@ class CaptureEngineTest {
         )
 
         for (index in 1..10_000) {
-            engine.submit(eventOf("trail_test_%05d".format(index)))
+            engine.submit(eventOf("trail_test_%05d".format(index), ts = index.toLong()))
         }
 
         val dump = engine.dumpRecent(2000)
@@ -210,9 +272,10 @@ class CaptureEngineTest {
     private fun eventOf(
         name: String = "trail_test_event",
         attrs: Map<String, String> = emptyMap(),
+        ts: Long = 1_000L,
     ): LogEvent =
         LogEvent(
-            ts = 1_000L,
+            ts = ts,
             traceId = null,
             tag = "widget",
             name = name,

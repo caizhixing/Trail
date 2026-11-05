@@ -74,7 +74,12 @@ internal class CaptureEngine(
         }
     }
 
-    /** Behavior 3.10: newest `count` ring events as ascending JSONL text. */
+    /**
+     * Behavior 3.10: the arrival-newest `count` ring events rendered as JSONL
+     * in ascending `ts` order. Events may reach the ring out of order, so the
+     * slice is re-sorted with a stable sort: equal timestamps keep arrival
+     * order, which preserves cause-effect sequence within one millisecond.
+     */
     fun dumpRecent(count: Int): String {
         if (count <= 0) {
             return ""
@@ -82,6 +87,7 @@ internal class CaptureEngine(
         val snapshot = ring.snapshot()
         val fromIndex = maxOf(0, snapshot.size - count)
         return snapshot.subList(fromIndex, snapshot.size)
+            .sortedBy { it.ts }
             .joinToString(separator = "\n") { encoder.encodeEvent(it) }
     }
 

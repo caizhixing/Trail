@@ -8,16 +8,52 @@ import org.junit.Test
 class MaskingPolicyTest {
 
     @Test
-    fun builtInKeysAreEachMasked() {
+    fun builtInP4KeysArePinnedAndEachMasksItsValue() {
         val policy = MaskingPolicy.default()
 
-        for (key in MaskingPolicy.BUILT_IN_KEYS) {
+        // The P-4 list is hardcoded here on purpose (review r1 mutation
+        // finding): iterating MaskingPolicy.BUILT_IN_KEYS let deletions from
+        // the built-in list survive, and "***" is spelled out so the mask
+        // literal is a contract, not an implementation constant.
+        assertEquals(
+            setOf(
+                "token",
+                "password",
+                "secret",
+                "authorization",
+                "cookie",
+                "set-cookie",
+                "api_key",
+                "phone",
+            ),
+            MaskingPolicy.BUILT_IN_KEYS,
+        )
+        for (key in listOf(
+            "token",
+            "password",
+            "secret",
+            "authorization",
+            "cookie",
+            "set-cookie",
+            "api_key",
+            "phone",
+        )) {
             assertEquals(
-                "key <$key> must be masked",
-                MaskingPolicy.MASK,
+                "built-in key <$key> must mask its value",
+                "***",
                 policy.apply(mapOf(key to "sensitive-value"))[key],
             )
         }
+    }
+
+    @Test
+    fun keysOutsideTheP4ListAreNotMasked() {
+        val policy = MaskingPolicy.default()
+
+        val masked = policy.apply(mapOf("username" to "alice", "note" to "hello world"))
+
+        assertEquals("alice", masked["username"])
+        assertEquals("hello world", masked["note"])
     }
 
     @Test

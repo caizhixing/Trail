@@ -5,12 +5,20 @@ import io.github.caizhixing.trail.model.Level
 import io.github.caizhixing.trail.model.LogEvent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
 import java.io.IOException
 import java.io.Writer
+import java.nio.file.Files
+import java.nio.file.attribute.AclEntry
+import java.nio.file.attribute.AclEntryPermission
+import java.nio.file.attribute.AclEntryType
+import java.nio.file.attribute.AclFileAttributeView
+import java.nio.file.attribute.UserPrincipal
+import java.util.EnumSet
 
 /** Behavior 3.8: rolling files, pruning, resume and paged reads (real temp dir). */
 class JsonlFileStoreTest {
@@ -134,6 +142,54 @@ class JsonlFileStoreTest {
         assertEquals(listOf("trail_test_good"), store.readEvents(1, 1).map { it.name })
     }
 
+    /**
+     * A managed file that is listed but cannot be opened (permissions) must
+     * be skipped by [JsonlFileStore.readEvents] while the remaining files
+     * still page normally.
+     *
+     * Scope note (review r1): the read path has no injectable reader seam, so
+     * this constructs a genuinely unreadable file via a deny-READ_DATA ACL —
+     * the reliable Windows/NTFS way; read-only attributes do not block reads
+     * there. On filesystems that cannot express per-file ACLs the test is
+     * skipped via Assume rather than silently passing.
+     */
+    @Test
+    fun unreadableFileIsSkippedWhileRemainingFilesStillPage() {
+        val dir = tmp.newFolder("trail-data")
+        File(dir, "trail_0000.jsonl").writeText(JsonlEncoder.encodeEvent(eventOf("trail_test_a")) + "\n")
+        val locked = File(dir, "trail_0001.jsonl")
+        locked.writeText(JsonlEncoder.encodeEvent(eventOf("trail_test_locked")) + "\n")
+        File(dir, "trail_0002.jsonl").writeText(JsonlEncoder.encodeEvent(eventOf("trail_test_b")) + "\n")
+        val store = JsonlFileStore(dir, maxFileBytes = 10_000, maxFiles = 5)
+
+        val aclView = Files.getFileAttributeView(locked.toPath(), AclFileAttributeView::class.java)
+        val owner = Files.getOwner(locked.toPath())
+        if (aclView == null || owner == null) {
+            assumeTrue("filesystem cannot express per-file ACLs; unreadable file not constructible", false)
+            return
+        }
+        val originalAcl = aclView.acl
+        try {
+            aclView.acl = listOf(denyReadData(owner)) + originalAcl
+            assumeTrue(
+                "OS token bypassed the deny ACE; unreadable file not constructible",
+                runCatching { locked.inputStream().use { } }.isFailure,
+            )
+
+            assertEquals(3, store.fileCount())
+            assertEquals(
+                listOf("trail_test_a", "trail_test_b"),
+                store.readEvents(0, 10).map { it.name },
+            )
+            // the vanished file's line slots collapse; paging stays contiguous
+            assertEquals(listOf("trail_test_b"), store.readEvents(1, 10).map { it.name })
+            assertEquals(2, store.eventCount())
+        } finally {
+            aclView.acl = originalAcl
+        }
+        store.close()
+    }
+
     @Test
     fun sinkFailureWarnsAndAppendStaysNonFatal() {
         val warnings = mutableListOf<String>()
@@ -228,6 +284,13 @@ class JsonlFileStoreTest {
 
     private fun linesOf(store: JsonlFileStore): List<String> =
         store.filesOldestFirst().flatMap { file -> file.readLines() }
+
+    private fun denyReadData(principal: UserPrincipal): AclEntry =
+        AclEntry.newBuilder()
+            .setType(AclEntryType.DENY)
+            .setPrincipal(principal)
+            .setPermissions(EnumSet.of(AclEntryPermission.READ_DATA))
+            .build()
 
     private fun eventOf(name: String): LogEvent =
         LogEvent(

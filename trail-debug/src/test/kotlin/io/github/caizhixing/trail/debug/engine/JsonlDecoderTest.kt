@@ -127,6 +127,33 @@ class JsonlDecoderTest {
         assertEquals("a\nb", JsonlDecoder.decodeEvent(line)?.tag)
     }
 
+    @Test
+    fun decodeResolvesEveryStandardSingleCharEscape() {
+        // The encoder never emits these (`\/`, `\b`, `\f`, `\n`, `\r`, `\t`),
+        // but the decoder must accept them for lines written by other JSON
+        // producers; each escape is asserted against a literal target value.
+        val line = "{\"ts\":1,\"traceId\":null,\"tag\":\"t\",\"name\":\"n\"," +
+            "\"audience\":\"AI\",\"level\":\"INFO\"," +
+            "\"attrs\":{" +
+            "\"slash\":\"a\\/b\"," +
+            "\"backspace\":\"a\\bb\"," +
+            "\"formfeed\":\"a\\fb\"," +
+            "\"newline\":\"a\\nb\"," +
+            "\"carriage\":\"a\\rb\"," +
+            "\"tab\":\"a\\tb\"" +
+            "},\"tid\":null}"
+
+        val decoded = JsonlDecoder.decodeEvent(line)
+            ?: error("line using standard single-char escapes must decode")
+
+        assertEquals("a/b", decoded.attrs["slash"])
+        assertEquals("a\bb", decoded.attrs["backspace"])
+        assertEquals("a\u000Cb", decoded.attrs["formfeed"])
+        assertEquals("a\nb", decoded.attrs["newline"])
+        assertEquals("a\rb", decoded.attrs["carriage"])
+        assertEquals("a\tb", decoded.attrs["tab"])
+    }
+
     private fun decodeMinimal(attrs: Map<String, String>): LogEvent {
         val event = LogEvent(
             ts = 1L,
