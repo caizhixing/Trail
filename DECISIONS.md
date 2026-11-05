@@ -8,6 +8,9 @@
 ### 2026-11-05 reviewer 模型变更（k3$max → deepseek-v4-pro 裸 ID）
 阶段 0 选定的 `new-provider/k3$max` 与 `new-provider/k3` 在本 harness 的 workflow 子代理路径实测静默失败（对照组会话模型正常；`new-provider/` 前缀路径整体不可用）。用户改指定 `deepseek-v4-pro`；裸 ID（不带 provider 覆盖）冒烟实测可用。skill 记录的「deepseek-v4-pro 思考模式不可作子代理」限制针对 `new-provider/` 前缀路径，裸 ID 路径实测不受影响。家族 DeepSeek ≠ GLM（worker）✓ 仍合规。
 
+### 2026-11-05 离线缓存补齐：okhttp-jvm-5.5.1.jar（issue #7 env 解封）
+bootstrap 验证盲区：只验证过 `:trail-okhttp:compileKotlin`（主源集不触碰 typealias），未跑 test。okhttp 5.x KMP 根包 JVM 变体重定向到 `okhttp-jvm:5.5.1`，其 jar 未缓存（缓存里只有 android AAR 与 4.12.0 旧 jar）。以临时工程（java 插件 + mavenCentral）一次性拉取入库（连带 okio-jvm-3.18.1、kotlin-stdlib-2.2.21 传递缓存；仓库内 stdlib 仍 force 2.2.10 不受影响）。**注意**：全局 `~/.gradle/gradle.properties` 配了死代理 127.0.0.1:7897，任何需要联网的 provisioning 调用须加 `-Dhttp.nonProxyHosts=*` 绕过。**KMP typealias 陷阱**：`okhttp3.Proxy`/`ProxySelector`/`HostnameVerifier` 在 JVM 工件中无 class（actual typealias 擦除为 JDK 类型），纯 JVM 模块源码必须 import JDK 原型（`java.net.Proxy` 等）。
+
 ### 2026-11-05 契约修订 A：Trail 增加显式 traceId 重载（用户拍板）
 issue #7 揭示 PRD 内部不一致：§2.6 冻结「http 事件 traceId = trailTraced() 调用点捕获值」，但 §2.3 的 Trail API 无通道写 LogEvent.traceId（interceptor 跑在 OkHttp 线程，协程上下文已不在；withTrace 生成新 id 而非复用）。用户三选一拍板 A：三工件（debug/noop/spi）同步增加非 inline 重载 `event(tag, name, traceId: String?, audience, level, attrs: Map)`——debug 用显式 traceId 覆盖上下文查找，noop 空体，spi 加桩。被否备选：B 捕获值存保留 attr `trace_id`（§2.6 语义降级，查看器需特判）；C 真实 debug 工件集成测试（JVM 模块禁 android 依赖，不可行）。#2 的 JVM 签名集合同步更新归 #7。
 
