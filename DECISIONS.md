@@ -74,3 +74,14 @@ group `io.github.caizhixing.trail`；工件 `trail-api` / `trail-debug` / `trail
 | P-6 | attrs 值截断上限 512 字符；网络 body 截断默认 4KB/侧 | §9.3 / F3 默认值落定 |
 | P-7 | traceId 格式 `t_` + 16 hex；tid = 线程名 | 可读性与唯一性折中 |
 | P-8 | dumpRecent 空 / 未初始化时返回空字符串而非异常 | F7 容错语义 |
+
+## v1 交付终审记录（2026-11-06）
+
+### 终局集成门禁
+main = f55ffc1；`--offline` 全矩阵（5 模块测试 + 3 变体 APK）exit 0；**287 测试 0 失败**（api 12 / spi 9 / okhttp 28 / debug 220 / noop 18）；check_zero_footprint.ps1 十项全 PASS（含 Check 5 mapping/usage 硬证据：8 production 类 R8 已删、40 debug 类零泄漏）。
+
+### 用户终审拍板（第三道门）
+10 组 PRD 外决策全部确认验收（含契约修订 A、#5 裁定②④、#6 八条 + RecentHours=1、#7 六条 + 空响应体省略、#8 文档对齐、withTrace 非 inline 理由更正为 PRD 冻结签名）。对 6 项对外契约逐项核对无变更。
+
+### 复盘指标
+8 单 / 10 PR（#9-#18，另 #14 废弃 #15 补救）/ 15 轮跨模型评审（deepseek-v4-pro；含变异复做、负例自证、ACL 真实用例）/ 4 个 PR 需返工（#3 r2、#7 r2、#5 r2、#8 r3）。事故 2 起：PR #13 合并竞态（流程修正：push 校验与 merge 分离；补丁从当前 main 新建分支）、flash worker 静默失败 1 次（重发成功）。模型分配：worker = 会话 glm-5.3（#5）+ glm-5.3-flash（#4/#6/#7/#8 轮）；reviewer = deepseek-v4-pro 裸 ID；GPT 变体不可用。
