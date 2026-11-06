@@ -301,6 +301,7 @@ if (-not (Test-Path -LiteralPath $mappingPath)) {
         'io.github.caizhixing.trail.debug.export.AndroidExportSharer',
         'io.github.caizhixing.trail.debug.export.ExportFileNamePolicy',
         'io.github.caizhixing.trail.debug.export.ExportScope',
+        'io.github.caizhixing.trail.debug.export.ExportScopeKt',
         'io.github.caizhixing.trail.debug.export.ExportSharePayload',
         'io.github.caizhixing.trail.debug.export.ResultState',
         'io.github.caizhixing.trail.debug.export.SnapshotTrailEventExporter',

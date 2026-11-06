@@ -51,7 +51,7 @@ AGP 9.5.0 默认只为 library 的 **debug** buildType 创建 host unit test 组
 trail-okhttp 需要编译期引用 Trail 又不能钉死变体 → spi 提供非 inline 桩（Trail / TrailGate），okhttp `compileOnly` 之，运行期由 app 类路径上的 debug / noop 真类解析（Kotlin inline fun 也会编译出真实方法，虚拟分派正确命中）。桩函数必须非 inline（防桩常量烘入）。禁止任何发布工件依赖 spi。
 
 ### 2026-11-05 withTrace 为非 inline suspend 壳
-`suspend` + `inline` 组合被语言禁止；withTrace 必须 wrap 业务块，无法用常量门 guard 消除。生产足迹 = `trail.Trail` 壳类（纯 `block()` 委托，零字符串、零逻辑），预期 R8 平凡内联后整类消除——由 issue #2 实证；若 R8 不消，验收 A-② 降级为「壳类豁免」并升级用户拍板。
+签名按工作流 PRD §2.3 冻结为非 inline：inline 化需把调用块声明为 `crossinline suspend` 再经 `withContext` 执行，块体与 trace 上下文的挂起交织语义需专门验证，v1 不做（review r2 曾以 Kotlin 2.2.10 实测纠正早先「suspend+inline 被语言禁止」的错误表述——组合本身可编译）。withTrace 无法用常量门 guard 消除；生产足迹 = `trail.Trail` 壳类（纯 `block()` 委托，零字符串、零逻辑），预期 R8 平凡内联后整类消除——由 issue #2 实证；若 R8 不消，验收 A-② 降级为「壳类豁免」并升级用户拍板。
 
 ### 2026-11-05 JSONL 手写编码器（不引 kotlinx.serialization）
 保持 trail-api / trail-debug 依赖面最小（api 零第三方依赖）；JSON 转义为纯函数，100% 行覆盖测试锁定。被否备选：kotlinx.serialization（给 api 引入编译器插件与运行时依赖）。

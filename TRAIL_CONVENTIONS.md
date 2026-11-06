@@ -146,7 +146,7 @@ public static void onCallbackInvoked(String source) {
 
 ## 附录 A. withTrace 语义边界（v1，宿主必读）
 
-`withTrace` 是**非 inline suspend 壳**（DECISIONS.md「withTrace 为非 inline suspend 壳」）：`inline suspend` 函数若要用 `withContext` 安装上下文并执行调用方块，块必须 `crossinline`，而 `crossinline` 禁止块内挂起调用——等价不可用，故享受不到常量门消除，生产足迹由 R8 平凡内联后整类删除（实证见 DECISIONS.md D-1 结项）。使用时注意三条 v1 语义边界：
+`withTrace` 是**非 inline suspend 壳**（签名按工作流 PRD §2.3 冻结）：inline 化需把调用块声明为 `crossinline suspend` 再经 `withContext` 执行，块体与 trace 上下文的挂起交织语义需要专门验证，v1 不做；且非 inline 壳并无生产代价——R8 平凡内联后整类删除（实证见 DECISIONS.md D-1 结项与 check_zero_footprint.ps1 Check 5）。使用时注意三条 v1 语义边界：
 
 1. **裸 launch / async 逃逸**：traceId 经 `CoroutineContext.Element` + 结构化并发传播。块内从**块外 scope**（捕获的 `viewModelScope`、自建 scope 等）派生的 `launch` / `async` **不继承** withTrace 注入的上下文，其中事件 traceId = null。宿主须在块内用 `coroutineScope { }`（或 `withContext`）结构化创建子协程，让子协程从块内上下文派生。块内的 Flow 操作符链、嵌套 `withContext`、块内 scope 派生均正常继承（协程上下文按 key 合并）。
 2. **协程边界异常实例可能被复制**：块内抛出的异常跨越协程边界向外传播时，kotlinx-coroutines 可能复制异常实例（栈恢复 / 去重报告机制）；**类型、message、cause 语义不变**。宿主 catch 处不得依赖异常**同一性**（`e === original`）判断，按类型与语义处理即可。
